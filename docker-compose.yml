@@ -1,0 +1,135 @@
+name: cryptopay
+
+x-backend-env: &backend-env
+  APP_NAME: ${APP_NAME:-CryptoPay}
+  APP_ENV: ${APP_ENV:-local}
+  APP_DEBUG: ${APP_DEBUG:-false}
+  APP_URL: ${APP_URL:-http://localhost:8095}
+  APP_KEY: ${APP_KEY:-}
+  LOG_CHANNEL: stderr
+  DB_CONNECTION: pgsql
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_DATABASE: ${DB_DATABASE:-cryptopay}
+  DB_USERNAME: ${DB_USERNAME:-cryptopay}
+  DB_PASSWORD: ${DB_PASSWORD:-secret}
+  REDIS_HOST: redis
+  REDIS_CLIENT: predis
+  CACHE_STORE: redis
+  QUEUE_CONNECTION: redis
+  SESSION_DRIVER: redis
+  INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-change-me-internal-token-please}
+  WATCHER_URL: http://watcher:3100
+  SIMULATION_ENABLED: ${SIMULATION_ENABLED:-true}
+  ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@cryptopay.local}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-password}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-cryptopay}
+      POSTGRES_USER: ${DB_USERNAME:-cryptopay}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-cryptopay} -d ${DB_DATABASE:-cryptopay}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    build:
+      context: ./backend
+    environment: *backend-env
+    volumes:
+      - app-storage:/var/www/html/storage/app
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(0);'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  queue:
+    build:
+      context: ./backend
+    command: ["php", "artisan", "queue:work", "redis", "--queue=default,webhooks", "--tries=3", "--sleep=2", "--max-time=3600"]
+    environment:
+      <<: *backend-env
+      SKIP_MIGRATIONS: "true"
+    volumes:
+      - app-storage:/var/www/html/storage/app
+    depends_on:
+      app: { condition: service_started }
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: ./backend
+    command: ["php", "artisan", "schedule:work"]
+    environment:
+      <<: *backend-env
+      SKIP_MIGRATIONS: "true"
+    volumes:
+      - app-storage:/var/www/html/storage/app
+    depends_on:
+      app: { condition: service_started }
+    restart: unless-stopped
+
+  watcher:
+    build:
+      context: ./watcher
+    environment:
+      PORT: 3100
+      BACKEND_URL: http://nginx
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-change-me-internal-token-please}
+      ETH_RPC_URL: ${ETH_RPC_URL:-https://ethereum-rpc.publicnode.com}
+      BSC_RPC_URL: ${BSC_RPC_URL:-https://bsc-rpc.publicnode.com}
+      TRON_API_URL: ${TRON_API_URL:-https://api.trongrid.io}
+      TRON_API_KEY: ${TRON_API_KEY:-}
+      EVM_XPUB: ${EVM_XPUB:-}
+      TRON_XPUB: ${TRON_XPUB:-}
+      WATCHER_ENABLED: ${WATCHER_ENABLED:-true}
+      EVM_BATCH_BLOCKS: ${EVM_BATCH_BLOCKS:-20}
+      POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-5000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATA_DIR: /app/data
+    volumes:
+      - watcher-data:/app/data
+    depends_on:
+      app: { condition: service_started }
+    restart: unless-stopped
+
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    ports:
+      - "${APP_PORT:-8095}:80"
+    depends_on:
+      app: { condition: service_started }
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  app-storage:
+  watcher-data:

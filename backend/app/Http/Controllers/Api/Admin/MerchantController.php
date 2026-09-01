@@ -1,0 +1,76 @@
+<?php
+
+namespace App\Http\Controllers\Api\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\StoreMerchantRequest;
+use App\Http\Requests\Admin\UpdateMerchantRequest;
+use App\Http\Resources\MerchantResource;
+use App\Models\Merchant;
+use App\Services\ApiKeyService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+
+class MerchantController extends Controller
+{
+    public function index(Request $request): AnonymousResourceCollection
+    {
+        $merchants = Merchant::query()
+            ->when($request->string('q')->toString(), fn ($q, $v) => $q->where(fn ($w) => $w
+                ->where('name', 'like', "%{$v}%")
+                ->orWhere('email', 'like', "%{$v}%")))
+            ->when($request->has('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')))
+            ->withCount('invoices')
+            ->latest()
+            ->paginate(min(100, max(1, (int) $request->integer('per_page', 25))));
+
+        return MerchantResource::collection($merchants);
+    }
+
+    public function store(StoreMerchantRequest $request): JsonResponse
+    {
+        $merchant = Merchant::create($request->validated() + [
+            'webhook_secret' => ApiKeyService::generateWebhookSecret(),
+        ]);
+
+        // `is_active` is a DB default; without refresh() it serialises as null and the
+        // admin UI renders a brand-new merchant as "Inactive".
+        $merchant->refresh();
+
+        return (new MerchantResource($merchant))->response()->setStatusCode(201);
+    }
+
+    public function show(string $merchant): MerchantResource
+    {
+        $model = Merchant::query()
+            ->with(['balances', 'apiKeys' => fn ($q) => $q->latest()])
+            ->whereKey($merchant)
+            ->firstOrFail();
+
+        return new MerchantResource($model);
+    }
+
+    public function update(UpdateMerchantRequest $request, string $merchant): MerchantResource
+    {
+        $model = Merchant::query()->whereKey($merchant)->firstOrFail();
+
+        $model->update($request->validated());
+
+        return new MerchantResource($model->load(['balances', 'apiKeys']));
+    }
+
+    public function rotateWebhookSecret(string $merchant): JsonResponse
+    {
+        $model = Merchant::query()->whereKey($merchant)->firstOrFail();
+
+        $secret = ApiKeyService::generateWebhookSecret();
+        $model->forceFill(['webhook_secret' => $secret])->save();
+
+        // Shown once so it can be copied into the merchant's integration.
+        return response()->json([
+            'webhook_secret' => $secret,
+            'merchant' => (new MerchantResource($model))->toArray(request()),
+        ]);
+    }
+}

@@ -1,0 +1,219 @@
+<?php
+
+namespace App\Services;
+
+use App\Enums\InvoiceStatus;
+use App\Enums\InvoiceType;
+use App\Enums\TransactionStatus;
+use App\Exceptions\InvalidStateException;
+use App\Models\Invoice;
+use App\Models\Merchant;
+use App\Support\Money;
+use App\Support\NetworkRegistry;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Invoice lifecycle and the SPEC §5 status machine.
+ */
+class InvoiceService
+{
+    public function __construct(
+        private readonly AddressService $addresses,
+        private readonly WebhookService $webhooks,
+    ) {}
+
+    /**
+     * @param  array{amount: string, currency: string, network: string, external_id?: ?string,
+     *   description?: ?string, customer_email?: ?string, customer_id?: ?string, metadata?: ?array,
+     *   success_url?: ?string, cancel_url?: ?string, expires_in?: ?int}  $data
+     */
+    public function create(Merchant $merchant, array $data, InvoiceType $type = InvoiceType::Payment): Invoice
+    {
+        $networkCode = $data['network'];
+        $currency = $data['currency'];
+
+        $registry = NetworkRegistry::make();
+        $network = $registry->network($networkCode);
+
+        if (! $network || ! $network->is_enabled) {
+            throw new InvalidStateException("Network [{$networkCode}] is not available.");
+        }
+
+        $contract = $registry->contract($networkCode, $currency);
+
+        if (! $contract || ! $contract->is_enabled) {
+            throw new InvalidStateException("{$currency} is not available on [{$networkCode}].");
+        }
+
+        // Allocated outside the invoice transaction: it performs an HTTP call to
+        // the watcher and holds a row lock on `wallets` for its duration.
+        $depositAddress = $this->addresses->allocate($networkCode, $merchant);
+
+        $expiresIn = (int) ($data['expires_in'] ?? 3600);
+
+        return DB::transaction(function () use ($merchant, $data, $type, $depositAddress, $networkCode, $currency, $expiresIn) {
+            $invoice = Invoice::create([
+                'merchant_id' => $merchant->id,
+                'type' => $type->value,
+                'external_id' => $data['external_id'] ?? null,
+                'currency' => $currency,
+                'network_code' => $networkCode,
+                'deposit_address_id' => $depositAddress->id,
+                'amount' => Money::normalize($data['amount']),
+                'amount_received' => Money::zero(),
+                'amount_confirmed' => Money::zero(),
+                'status' => InvoiceStatus::Pending->value,
+                'description' => $data['description'] ?? null,
+                'customer_email' => $data['customer_email'] ?? null,
+                'customer_id' => $data['customer_id'] ?? null,
+                'metadata' => $data['metadata'] ?? null,
+                'success_url' => $data['success_url'] ?? null,
+                'cancel_url' => $data['cancel_url'] ?? null,
+                'expires_at' => now()->addSeconds($expiresIn),
+            ]);
+
+            // The address belongs to this invoice forever; it is never reused.
+            $depositAddress->forceFill(['invoice_id' => $invoice->id])->save();
+
+            $invoice->setRelation('depositAddress', $depositAddress);
+            $invoice->setRelation('merchant', $merchant);
+
+            return $invoice;
+        });
+    }
+
+    public function cancel(Invoice $invoice): Invoice
+    {
+        if ($invoice->status !== InvoiceStatus::Pending) {
+            throw new InvalidStateException(
+                "Only pending invoices can be cancelled; this one is [{$invoice->status->value}].",
+                ['status' => [$invoice->status->value]],
+            );
+        }
+
+        $invoice->forceFill(['status' => InvoiceStatus::Cancelled->value])->save();
+
+        $this->webhooks->dispatchInvoiceEvent(InvoiceStatus::Cancelled->webhookEvent(), $invoice);
+
+        return $invoice;
+    }
+
+    /**
+     * Apply expiry to an invoice whose `expires_at` has passed (SPEC §5):
+     * nothing received -> expired, confirmed but short -> partially_paid.
+     */
+    public function expire(Invoice $invoice): Invoice
+    {
+        return $this->recalculate($invoice, expiring: true);
+    }
+
+    /**
+     * Recompute received/confirmed totals and the status from the invoice's
+     * transactions, persist any change, and emit the matching webhook.
+     */
+    public function recalculate(Invoice $invoice, bool $expiring = false): Invoice
+    {
+        $totals = $invoice->transactions()
+            ->selectRaw('status, count(*) as cnt, sum(amount) as total')
+            ->groupBy('status')
+            ->get()
+            ->keyBy(fn ($row) => is_string($row->status) ? $row->status : $row->status->value);
+
+        $confirmed = Money::normalize($totals->get(TransactionStatus::Confirmed->value)?->total ?? 0);
+        $detected = Money::normalize($totals->get(TransactionStatus::Detected->value)?->total ?? 0);
+        $received = Money::add($confirmed, $detected);
+
+        $previous = $invoice->status;
+        $next = $this->resolveStatus($invoice, $confirmed, $received, $expiring);
+
+        $changes = [
+            'amount_received' => $received,
+            'amount_confirmed' => $confirmed,
+        ];
+
+        if ($next !== $previous) {
+            $changes['status'] = $next->value;
+        }
+
+        if ($next->isPaid() && $invoice->paid_at === null) {
+            $changes['paid_at'] = now();
+        } elseif (! $next->isPaid() && $invoice->paid_at !== null) {
+            // A reorg took the payment back.
+            $changes['paid_at'] = null;
+        }
+
+        $invoice->forceFill($changes)->save();
+
+        if ($next !== $previous) {
+            // A token purchase follows its invoice. Resolved lazily to keep the
+            // two services free of a circular constructor dependency.
+            if ($invoice->type === InvoiceType::TokenPurchase) {
+                app(TokenPurchaseService::class)->syncWithInvoice($invoice);
+            }
+
+            if ($next->emitsWebhook()) {
+                $this->webhooks->dispatchInvoiceEvent($next->webhookEvent(), $invoice->refresh());
+            }
+        }
+
+        return $invoice;
+    }
+
+    /**
+     * The SPEC §5 state machine. Late payments to an expired or cancelled
+     * invoice still move it to paid/partially_paid.
+     */
+    private function resolveStatus(Invoice $invoice, string $confirmed, string $received, bool $expiring): InvoiceStatus
+    {
+        $current = $invoice->status;
+        $amount = Money::normalize($invoice->amount);
+        $expired = $expiring || $invoice->isExpired();
+
+        if (Money::isPositive($confirmed)) {
+            if (Money::cmp($confirmed, $amount) > 0) {
+                return InvoiceStatus::Overpaid;
+            }
+
+            if (Money::cmp($confirmed, $this->paymentThreshold($invoice)) >= 0) {
+                return InvoiceStatus::Paid;
+            }
+
+            return $expired ? InvoiceStatus::PartiallyPaid : InvoiceStatus::Confirming;
+        }
+
+        if (Money::isPositive($received)) {
+            // Detected but not yet confirmed: hold the invoice open so the
+            // confirmation can still land, unless it was explicitly cancelled.
+            if ($current === InvoiceStatus::Cancelled) {
+                return InvoiceStatus::Cancelled;
+            }
+
+            return $current === InvoiceStatus::Expired ? InvoiceStatus::Expired : InvoiceStatus::Confirming;
+        }
+
+        if ($expired && $current->isOpen()) {
+            return InvoiceStatus::Expired;
+        }
+
+        // Nothing is on chain any more — every transaction was orphaned by a
+        // reorg. Fall back to the invoice's pre-payment state.
+        if (in_array($current, [InvoiceStatus::Paid, InvoiceStatus::Overpaid, InvoiceStatus::PartiallyPaid, InvoiceStatus::Confirming], true)) {
+            return $expired ? InvoiceStatus::Expired : InvoiceStatus::Pending;
+        }
+
+        return $current;
+    }
+
+    /** amount minus the merchant's underpayment tolerance (percent, SPEC §5). */
+    public function paymentThreshold(Invoice $invoice): string
+    {
+        $invoice->loadMissing('merchant');
+
+        $tolerance = $invoice->merchant?->underpaymentTolerance() ?? '0.5';
+        $amount = Money::normalize($invoice->amount);
+
+        $allowance = Money::div(Money::mul($amount, $tolerance), '100');
+
+        return Money::sub($amount, $allowance);
+    }
+}
