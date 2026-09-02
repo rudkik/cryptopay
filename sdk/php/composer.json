@@ -1,0 +1,44 @@
+{
+    "name": "cryptopay/sdk",
+    "description": "Official PHP SDK for the CryptoPay merchant API",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["cryptopay", "crypto", "payments", "usdt", "usdc", "sdk"],
+    "require": {
+        "php": "^8.1",
+        "ext-json": "*",
+        "ext-curl": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.5"
+    },
+    "suggest": {
+        "illuminate/support": "Required to use the Laravel service provider and facade.",
+        "illuminate/http": "Required to use the VerifyCryptoPayWebhook middleware."
+    },
+    "autoload": {
+        "psr-4": {
+            "CryptoPay\\Sdk\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "CryptoPay\\Sdk\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "CryptoPay\\Sdk\\Laravel\\CryptoPayServiceProvider"
+            ],
+            "aliases": {
+                "CryptoPay": "CryptoPay\\Sdk\\Laravel\\CryptoPay"
+            }
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

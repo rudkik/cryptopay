@@ -1,0 +1,55 @@
+// Пример: приём вебхуков CryptoPay без каких-либо зависимостей (чистый node:http).
+//
+// Запуск:
+//   CRYPTOPAY_WEBHOOK_SECRET=whsec_... node examples/webhook-server.mjs
+//
+// Слушает POST /webhooks/cryptopay на порту 3000 (переменная PORT), проверяет подпись
+// через verifyWebhook() и печатает разобранное событие.
+
+import { createServer } from 'node:http'
+import { SignatureError, verifyWebhook } from '../dist/index.js'
+
+const secret = process.env.CRYPTOPAY_WEBHOOK_SECRET ?? 'whsec_dev_secret'
+const port = Number(process.env.PORT ?? 3000)
+
+function readRawBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    req.on('data', (chunk) => chunks.push(chunk))
+    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('error', reject)
+  })
+}
+
+const server = createServer(async (req, res) => {
+  if (req.method !== 'POST' || req.url !== '/webhooks/cryptopay') {
+    res.writeHead(404, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: { code: 'not_found', message: 'Not found', details: {} } }))
+    return
+  }
+
+  const rawBody = await readRawBody(req)
+
+  try {
+    const event = verifyWebhook(rawBody, req.headers, secret)
+    console.log(`[webhook] ${event.event} (delivery=${event.deliveryId}) isPaid=${event.isPaid}`)
+    if (event.invoice) {
+      console.log(`  invoice ${event.invoice.id}: ${event.invoice.status}, ${event.invoice.amount} ${event.invoice.currency}`)
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ received: true }))
+  } catch (err) {
+    if (err instanceof SignatureError) {
+      console.error('[webhook] signature verification failed:', err.message)
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: { code: 'invalid_signature', message: err.message, details: {} } }))
+      return
+    }
+    throw err
+  }
+})
+
+server.listen(port, () => {
+  console.log(`CryptoPay webhook example listening on http://localhost:${port}/webhooks/cryptopay`)
+})

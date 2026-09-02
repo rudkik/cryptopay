@@ -63,6 +63,25 @@ curl -X POST http://localhost:8095/api/v1/invoices \
 Покупка токенов: `POST /api/v1/token-purchases` создаёт счёт, после оплаты токены зачисляются на `customer_id`
 (`GET /api/v1/customers/{customer_id}/holdings`). Полный список эндпоинтов — SPEC.md §6 и страница `/admin/docs`.
 
+## SDK для подключения (готовые обёртки)
+
+| Пакет | Путь | Что умеет |
+|-------|------|-----------|
+| `cryptopay/sdk` (Composer, PHP ≥ 8.1) | `sdk/php/` | клиент всех методов `/api/v1`, DTO, проверка подписи вебхука, Laravel service provider + middleware `cryptopay.webhook` + фасад |
+| `@cryptopay/sdk` (npm, Node ≥ 18) | `sdk/js/` | то же на TypeScript (ESM + CJS), `verifyWebhook`, middleware `cryptoPayWebhook` |
+
+```php
+$cp = new \CryptoPay\Sdk\Client('cp_live_...', 'http://localhost:8095');
+$invoice = $cp->createInvoice(['amount' => '50', 'currency' => 'USDT', 'network' => 'tron', 'customer_id' => 'user-123']);
+return redirect($invoice->paymentUrl);
+
+// приём вебхука
+$event = \CryptoPay\Sdk\Webhook::verify($rawBody, $headers, $webhookSecret);
+if ($event->isPaid()) { /* зачислить $event->invoice->amountConfirmed пользователю $event->invoice->customerId */ }
+```
+
+Подробные примеры и Laravel-интеграция: `sdk/php/README.md`, `sdk/js/README.md`, страница `/admin/docs` → SDKs.
+
 ## Полезные команды
 
 ```bash

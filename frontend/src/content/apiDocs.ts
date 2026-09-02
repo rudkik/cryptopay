@@ -381,9 +381,10 @@ invoice = res.json()`,
     { "currency": "USDT", "network": "tron", "available": "1250.50", "pending": "100.00" },
     { "currency": "USDC", "network": "bsc",  "available": "0",       "pending": "0" }
   ],
-  "totals": [
-    { "currency": "USDT", "available": "1250.50", "pending": "100.00" }
-  ]
+  "totals": {
+    "USDT": { "available": "1250.50", "pending": "100.00" },
+    "USDC": { "available": "0",       "pending": "0" }
+  }
 }`,
           },
           {
@@ -644,6 +645,281 @@ def cryptopay_webhook():
             title: 'Make handlers idempotent',
             value:
               'Retries and late payments mean the same event can arrive more than once. Deduplicate on `X-CryptoPay-Delivery`, or make fulfilment safe to repeat for a given invoice id.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'sdks',
+    title: 'SDKs',
+    sections: [
+      {
+        id: 'sdk-overview',
+        title: 'Official SDKs',
+        blocks: [
+          {
+            kind: 'text',
+            value:
+              'Two thin wrappers ship with CryptoPay. Both cover the whole merchant API, map the error envelope onto typed exceptions, and verify webhook signatures in constant time so you never hand-roll the HMAC.',
+          },
+          {
+            kind: 'table',
+            headers: ['SDK', 'Package', 'Requires'],
+            rows: [
+              ['PHP', '`cryptopay/sdk`', 'PHP 8.1+, ext-curl — no framework required'],
+              ['Node.js / TypeScript', '`@cryptopay/sdk`', 'Node 18+ — zero runtime dependencies, ESM + CJS'],
+            ],
+          },
+          {
+            kind: 'callout',
+            tone: 'info',
+            title: 'Amounts stay strings',
+            value:
+              'Both SDKs keep every monetary field as the decimal string the API returned. Do the arithmetic with bcmath or a decimal library — casting to `float`/`Number` will silently lose precision on 18-decimal BSC amounts.',
+          },
+        ],
+      },
+      {
+        id: 'sdk-php',
+        title: 'PHP SDK',
+        blocks: [
+          {
+            kind: 'code',
+            language: 'bash',
+            title: 'Install',
+            code: `composer require cryptopay/sdk`,
+          },
+          {
+            kind: 'code',
+            language: 'php',
+            title: 'Create an invoice and redirect',
+            code: `<?php
+
+use CryptoPay\\Sdk\\Client;
+use CryptoPay\\Sdk\\Exception\\ApiException;
+
+$client = new Client(getenv('CRYPTOPAY_API_KEY'), 'https://pay.example.com');
+
+try {
+    $invoice = $client->createInvoice([
+        'amount'      => '100.00',
+        'currency'    => 'USDT',
+        'network'     => 'tron',
+        'external_id' => 'order-1042',
+        'customer_id' => 'user-77',
+        'success_url' => 'https://shop.example.com/thanks',
+    ], idempotencyKey: 'order-1042');
+} catch (ApiException $e) {
+    // $e->getErrorCode() — 'validation_error', 'rate_limited', ...
+    // $e->getDetails()   — per-field messages
+    // $e->getHttpStatus()
+    throw $e;
+}
+
+// Persist $invoice->id against the order, then send the buyer to the checkout.
+header('Location: ' . $invoice->paymentUrl);`,
+          },
+          {
+            kind: 'code',
+            language: 'php',
+            title: 'Read state back',
+            code: `$invoice = $client->getInvoice($id);
+
+if ($invoice->isPaid()) {
+    fulfil($invoice->externalId, $invoice->amountConfirmed);
+}
+
+$page = $client->listInvoices(['status' => 'paid', 'per_page' => 50]);
+foreach ($page as $paid) {
+    echo $paid->id, ' ', $paid->amount, PHP_EOL;
+}
+
+$balances = $client->balances();          // ->data (Balance[]) + ->totals
+$networks = $client->networks();          // Network[]
+$client->cancelInvoice($id);              // 409 invalid_state unless pending`,
+          },
+          {
+            kind: 'code',
+            language: 'php',
+            title: 'Verify a webhook (plain PHP)',
+            code: `<?php
+
+use CryptoPay\\Sdk\\Webhook;
+use CryptoPay\\Sdk\\Exception\\SignatureException;
+
+try {
+    $event = Webhook::verify(
+        file_get_contents('php://input'),   // raw bytes, never a re-encoded array
+        getallheaders(),
+        getenv('CRYPTOPAY_WEBHOOK_SECRET'),
+    );
+} catch (SignatureException $e) {
+    http_response_code(400);
+    exit;
+}
+
+if ($event->isPaid()) {
+    fulfil($event->invoice->externalId, $event->invoice->amountConfirmed);
+}
+
+http_response_code(200);`,
+          },
+        ],
+      },
+      {
+        id: 'sdk-laravel',
+        title: 'Laravel integration',
+        blocks: [
+          {
+            kind: 'text',
+            value:
+              'The package auto-discovers a service provider, a `CryptoPay` facade and a `cryptopay.webhook` route middleware. Illuminate is only a `suggest` — the SDK works identically outside Laravel.',
+          },
+          {
+            kind: 'code',
+            language: 'bash',
+            title: 'Publish the config',
+            code: `php artisan vendor:publish --tag=cryptopay-config`,
+          },
+          {
+            kind: 'code',
+            language: 'bash',
+            title: '.env',
+            code: `CRYPTOPAY_API_KEY=cp_live_0123456789abcdef0123456789abcdef01234567
+CRYPTOPAY_BASE_URL=https://pay.example.com
+CRYPTOPAY_WEBHOOK_SECRET=whsec_...`,
+          },
+          {
+            kind: 'code',
+            language: 'php',
+            title: 'routes/api.php',
+            code: `use CryptoPay\\Sdk\\Laravel\\CryptoPay;
+use CryptoPay\\Sdk\\WebhookEvent;
+use Illuminate\\Http\\Request;
+
+Route::post('/webhooks/cryptopay', function (Request $request) {
+    /** @var WebhookEvent $event */
+    $event = $request->attributes->get('cryptopay_event');
+
+    // Deduplicate: the same delivery can arrive more than once.
+    if (Delivery::whereKey($event->deliveryId)->exists()) {
+        return response()->noContent();
+    }
+
+    if ($event->isPaid()) {
+        Order::where('id', $event->invoice->externalId)->update(['status' => 'paid']);
+    }
+
+    return response()->noContent();
+})->middleware('cryptopay.webhook');
+
+// The facade resolves a Client configured from config/cryptopay.php.
+$invoice = CryptoPay::createInvoice(['amount' => '10', 'currency' => 'USDC', 'network' => 'bsc']);`,
+          },
+          {
+            kind: 'callout',
+            tone: 'warning',
+            title: 'Keep the raw body intact',
+            value:
+              'The signature covers the exact bytes CryptoPay sent. Mount the route in `routes/api.php` (no CSRF middleware) and never re-encode the payload before verification — a re-serialised JSON body will not match.',
+          },
+        ],
+      },
+      {
+        id: 'sdk-node',
+        title: 'Node.js / TypeScript SDK',
+        blocks: [
+          {
+            kind: 'code',
+            language: 'bash',
+            title: 'Install',
+            code: `npm install @cryptopay/sdk`,
+          },
+          {
+            kind: 'code',
+            language: 'typescript',
+            title: 'Create an invoice',
+            code: `import { CryptoPay, ApiError } from '@cryptopay/sdk'
+
+const cryptopay = new CryptoPay({
+  apiKey: process.env.CRYPTOPAY_API_KEY!,
+  baseUrl: 'https://pay.example.com',
+})
+
+try {
+  const invoice = await cryptopay.createInvoice(
+    {
+      amount: '100.00',
+      currency: 'USDT',
+      network: 'tron',
+      external_id: 'order-1042',
+      customer_id: 'user-77',
+    },
+    'order-1042', // Idempotency-Key
+  )
+
+  res.redirect(invoice.payment_url)
+} catch (err) {
+  if (err instanceof ApiError && err.isValidationError) {
+    console.error(err.code, err.details)
+  }
+  throw err
+}`,
+          },
+          {
+            kind: 'code',
+            language: 'typescript',
+            title: 'Read state back',
+            code: `const invoice = await cryptopay.getInvoice(id)
+if (invoice.is_paid) await fulfil(invoice.external_id)
+
+const page = await cryptopay.listInvoices({ status: 'paid', per_page: 50 })
+console.log(page.meta.total, page.data.length)
+
+const { data, totals } = await cryptopay.balances()
+const networks = await cryptopay.networks()
+await cryptopay.cancelInvoice(id)`,
+          },
+          {
+            kind: 'code',
+            language: 'typescript',
+            title: 'Webhook middleware (Express)',
+            code: `import express from 'express'
+import { cryptoPayWebhook } from '@cryptopay/sdk'
+
+const app = express()
+
+// express.raw is required — express.json() would destroy the signed bytes.
+app.post(
+  '/webhooks/cryptopay',
+  express.raw({ type: 'application/json' }),
+  cryptoPayWebhook(process.env.CRYPTOPAY_WEBHOOK_SECRET!, async (event) => {
+    if (await alreadyHandled(event.deliveryId)) return
+    if (event.isPaid) await fulfil(event.invoice!.external_id)
+  }),
+)`,
+          },
+          {
+            kind: 'code',
+            language: 'typescript',
+            title: 'Verify manually (any framework)',
+            code: `import { verifyWebhook, SignatureError } from '@cryptopay/sdk'
+
+try {
+  const event = verifyWebhook(rawBodyBuffer, req.headers, secret, { tolerance: 300 })
+  if (event.isPaid) await fulfil(event.invoice!.external_id)
+} catch (err) {
+  if (err instanceof SignatureError) return res.status(400).end()
+  throw err
+}`,
+          },
+          {
+            kind: 'callout',
+            tone: 'success',
+            title: 'Respond fast, work later',
+            value:
+              'Return 2xx as soon as the signature checks out and push fulfilment onto a queue. A handler slower than 15 seconds is treated as a failed delivery and retried.',
           },
         ],
       },

@@ -21,3 +21,9 @@ frontend/.env
 watcher/dist/
 watcher/data/
 watcher/.env
+sdk/php/vendor/
+sdk/php/.phpunit.result.cache
+sdk/php/.phpunit.cache/
+sdk/php/composer.lock
+sdk/js/node_modules/
+sdk/js/dist/
