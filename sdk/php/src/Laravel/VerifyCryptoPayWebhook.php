@@ -19,7 +19,17 @@ use Symfony\Component\HttpFoundation\Response;
  * by CryptoPayServiceProvider) on your webhook route:
  *
  *     Route::post('/webhooks/cryptopay', WebhookController::class)
- *         ->middleware('cryptopay.webhook');
+ *         ->middleware('cryptopay.webhook')
+ *         ->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class);
+ *
+ * CSRF: CryptoPay is a server-to-server caller and has no session cookie or CSRF
+ * token, so a route in the `web` group would be rejected with 419 before this
+ * middleware ever runs. Either declare the route in `routes/api.php` (no CSRF
+ * middleware there) or exclude it explicitly — `withoutMiddleware()` as above,
+ * or by adding the path to `$except` in your `VerifyCsrfToken` middleware
+ * (Laravel <=10) / `$middleware->validateCsrfTokens(except: [...])` in
+ * `bootstrap/app.php` (Laravel 11+). The signature check below is what
+ * authenticates the request; CSRF protection adds nothing to it.
  *
  * IMPORTANT: nothing upstream of this middleware may read or mutate the raw
  * request body (e.g. via a custom body-parsing middleware) — the signature
@@ -40,10 +50,20 @@ final class VerifyCryptoPayWebhook
                 $tolerance
             );
         } catch (SignatureException $e) {
+            // The precise reason (missing header, stale timestamp, unconfigured
+            // secret, bad signature) is useful to the operator and useful to an
+            // attacker probing the endpoint, so it goes to the log and never
+            // into the response body.
+            if (function_exists('logger')) {
+                logger()->warning('CryptoPay webhook rejected: '.$e->getMessage(), [
+                    'ip' => $request->ip(),
+                ]);
+            }
+
             return response()->json([
                 'error' => [
                     'code' => 'invalid_signature',
-                    'message' => $e->getMessage(),
+                    'message' => 'Invalid webhook signature.',
                     'details' => new \stdClass(),
                 ],
             ], Response::HTTP_BAD_REQUEST);

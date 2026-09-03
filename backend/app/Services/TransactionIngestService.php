@@ -24,6 +24,16 @@ use Illuminate\Support\Facades\Log;
  */
 class TransactionIngestService
 {
+    /**
+     * Attributes that describe settled money. Once `credited_at` is set they
+     * are frozen against replays (see persist()).
+     */
+    private const SETTLED_FIELDS = [
+        'invoice_id', 'merchant_id', 'network_code', 'tx_hash', 'log_index',
+        'from_address', 'to_address', 'currency', 'contract_address',
+        'amount', 'amount_raw', 'block_number', 'block_hash',
+    ];
+
     public function __construct(
         private readonly AddressService $addresses,
         private readonly InvoiceService $invoices,
@@ -127,6 +137,18 @@ class TransactionIngestService
             // A replayed payload must never lower the confirmation count.
             $attributes['confirmations'] = max((int) $transaction->confirmations, $attributes['confirmations']);
 
+            // Money that has already been credited is immutable. Without this,
+            // a replay carrying a different `amount` would rewrite the row the
+            // ledger was built from: the invoice would recalculate against the
+            // new figure (paid without a matching credit) and a later
+            // `orphaned` would reverse the new figure instead of the credited
+            // one, driving the balance negative.
+            if ($transaction->credited_at !== null) {
+                foreach (self::SETTLED_FIELDS as $field) {
+                    unset($attributes[$field]);
+                }
+            }
+
             if ($this->isDowngrade($previousStatus, $status)) {
                 // The watcher re-sends a transaction whenever its confirmation
                 // count changes, and after a manual /rescan it can re-announce
@@ -205,16 +227,51 @@ class TransactionIngestService
         $transaction->forceFill(['credited_at' => now()])->save();
     }
 
-    /** Reverse a credit when a confirmed transaction is later orphaned by a reorg. */
+    /**
+     * Reverse a credit when a confirmed transaction is later orphaned by a
+     * reorg.
+     *
+     * The amount reversed is the transaction's *net* effect on the ledger, not
+     * whatever `amount` the row currently carries. Those are normally the same
+     * value, but deriving it from the ledger makes it impossible for a reversal
+     * to take out more than was ever put in, however the row was replayed.
+     */
     private function reverse(Transaction $transaction): void
     {
         if ($transaction->credited_at === null || ! $transaction->merchant_id) {
             return;
         }
 
+        $credited = Money::normalize(
+            LedgerEntry::query()->where('transaction_id', $transaction->id)->sum('amount')
+        );
+
+        if (! Money::isPositive($credited)) {
+            // Nothing was ever moved for this transaction (a zero-amount
+            // credit, or it has already been reversed).
+            $transaction->forceFill(['credited_at' => null])->save();
+
+            return;
+        }
+
         $balance = $this->lockedBalance($transaction->merchant_id, $transaction->currency, $transaction->network_code);
 
-        $available = Money::sub($balance->available, $transaction->amount);
+        $available = Money::sub($balance->available, $credited);
+
+        if (Money::cmp($available, '0') < 0) {
+            // Unreachable while credits and reversals stay paired; if it ever
+            // happens the balance is wrong either way, so keep it at zero and
+            // make the inconsistency loud instead of silently going negative.
+            Log::critical('Reversal would drive a balance negative; clamped to zero', [
+                'merchant_id' => $transaction->merchant_id,
+                'currency' => $transaction->currency,
+                'network' => $transaction->network_code,
+                'transaction_id' => $transaction->id,
+            ]);
+
+            $credited = Money::normalize($balance->available);
+            $available = Money::zero();
+        }
 
         $balance->forceFill(['available' => $available])->save();
 
@@ -222,7 +279,7 @@ class TransactionIngestService
             'merchant_id' => $transaction->merchant_id,
             'currency' => $transaction->currency,
             'network_code' => $transaction->network_code,
-            'amount' => Money::sub('0', $transaction->amount),
+            'amount' => Money::sub('0', $credited),
             'type' => LedgerEntryType::Adjustment->value,
             'transaction_id' => $transaction->id,
             'balance_after' => $available,

@@ -149,7 +149,7 @@ Auth: Laravel Sanctum, `POST /api/admin/auth/login {email,password}` → `{ toke
 - `GET /watcher/health` — прокси к watcher `/health`.
 
 ### 6.5 Internal API (watcher ↔ backend) — `/api/internal/*`
-Auth: заголовок `X-Internal-Token: {INTERNAL_API_TOKEN}` (общий секрет из env). Все запросы идемпотентны.
+Auth: заголовок `X-Internal-Token: {INTERNAL_API_TOKEN}` (общий секрет из env, placeholder отвергается → 503). Доступен **только** через внутренний порт nginx `8081` (не публикуется наружу); на публичном порту эти пути отдают 404. Все запросы идемпотентны.
 - `GET /api/internal/config` →
   ```json
   { "networks": [ { "code": "ethereum", "chain_id": 1, "confirmations_required": 12, "is_enabled": true,
@@ -197,7 +197,7 @@ DB_HOST=postgres DB_PORT=5432 DB_DATABASE=cryptopay DB_USERNAME=cryptopay DB_PAS
 REDIS_HOST=redis
 INTERNAL_API_TOKEN=change-me-internal-token
 WATCHER_URL=http://watcher:3100
-BACKEND_URL=http://nginx        # для watcher (внутри compose)
+BACKEND_URL=http://nginx:8081   # для watcher: internal API живёт на отдельном непубликуемом порту nginx
 
 ADMIN_EMAIL=admin@cryptopay.local
 ADMIN_PASSWORD=password

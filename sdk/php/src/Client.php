@@ -83,7 +83,51 @@ final class Client
             $baseUrl = substr($baseUrl, 0, -strlen('/api/v1'));
         }
 
+        $scheme = strtolower((string) parse_url($baseUrl, PHP_URL_SCHEME));
+        if ($scheme !== 'http' && $scheme !== 'https') {
+            throw new InvalidArgumentException(
+                'CryptoPay base URL must be an http:// or https:// URL, got: '.$baseUrl
+            );
+        }
+
+        // Plain http is legitimate against a local stack (docker-compose exposes
+        // the API on http://localhost:8095), but anywhere else it would put the
+        // API key on the wire in clear text. Warn instead of hard-failing so a
+        // local install keeps working.
+        if ($scheme === 'http' && ! self::isLocalHost((string) parse_url($baseUrl, PHP_URL_HOST))) {
+            trigger_error(
+                'CryptoPay: base URL uses plain http against a non-local host — the API key is sent unencrypted. Use https://.',
+                E_USER_WARNING
+            );
+        }
+
         return $baseUrl;
+    }
+
+    private static function isLocalHost(string $host): bool
+    {
+        $host = strtolower(trim($host, '[]'));
+
+        return in_array($host, ['localhost', '127.0.0.1', '::1', 'host.docker.internal'], true)
+            || str_starts_with($host, '127.')
+            || str_ends_with($host, '.localhost')
+            || str_ends_with($host, '.local')
+            || str_ends_with($host, '.test');
+    }
+
+    /**
+     * Keep the API key out of var_dump()/dd() output — a debug statement left in
+     * a controller should not print a live merchant key into a log.
+     *
+     * @return array<string, mixed>
+     */
+    public function __debugInfo(): array
+    {
+        return [
+            'baseUrl' => $this->baseUrl,
+            'transport' => $this->transport::class,
+            'defaultHeaders' => array_merge($this->defaultHeaders, ['Authorization' => 'Bearer [redacted]']),
+        ];
     }
 
     // ------------------------------------------------------------------
@@ -348,6 +392,16 @@ final class Client
         return http_build_query($filtered);
     }
 
+    /** `Retry-After` in seconds, when the server sent a plain numeric value. */
+    private static function retryAfter(Response $response): ?int
+    {
+        $value = $response->headers['retry-after'] ?? null;
+
+        return is_string($value) && preg_match('/^\d{1,9}$/', trim($value)) === 1
+            ? (int) trim($value)
+            : null;
+    }
+
     private function toApiException(Response $response): ApiException
     {
         $status = $response->status;
@@ -368,7 +422,7 @@ final class Client
             $message = (string) ($error['message'] ?? ('HTTP '.$status));
             $details = is_array($error['details'] ?? null) ? $error['details'] : [];
 
-            return new ApiException($message, $code, $status, $details);
+            return new ApiException($message, $code, $status, $details, self::retryAfter($response));
         }
 
         $code = $status >= 500 ? 'server_error' : 'http_error';
@@ -377,7 +431,8 @@ final class Client
             'HTTP '.$status,
             $code,
             $status,
-            ['body' => substr($raw, 0, 2048)]
+            ['body' => substr($raw, 0, 2048)],
+            self::retryAfter($response)
         );
     }
 }

@@ -55,7 +55,10 @@ Route::prefix('public')
 Route::prefix('admin')->group(function () {
     Route::post('auth/login', [Admin\AuthController::class, 'login'])->middleware('throttle:admin-login');
 
-    Route::middleware(['auth:sanctum'])->group(function () {
+    // `active` matters on the read routes too: EnsureAdminRole already
+    // rechecks is_active, but without this a deactivated user's existing
+    // token keeps full read access to every merchant and invoice.
+    Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::post('auth/logout', [Admin\AuthController::class, 'logout']);
         Route::get('auth/me', [Admin\AuthController::class, 'me']);
 

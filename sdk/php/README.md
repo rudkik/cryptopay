@@ -133,13 +133,42 @@ $signature = Webhook::sign($secret, $timestamp, $rawBody); // 'sha256=' . hex hm
    ```
 
    Middleware сам проверяет подпись (`config('cryptopay.webhook_secret')`),
-   при ошибке возвращает `400 {"error":{"code":"invalid_signature",...}}`, а
-   при успехе кладёт разобранное событие в
+   при ошибке возвращает `400 {"error":{"code":"invalid_signature","message":"Invalid webhook signature."}}`
+   (конкретная причина уходит в лог, а не в ответ — чтобы не подсказывать
+   тому, кто перебирает подписи), а при успехе кладёт разобранное событие в
    `$request->attributes->get('cryptopay_event')`.
 
-   **Важно:** ничего до этого middleware не должно читать/изменять тело
-   запроса (например, кастомный body-parsing middleware) — подпись
+   **Важно (CSRF):** CryptoPay — server-to-server клиент, у него нет ни сессии,
+   ни CSRF-токена. Роут в группе `web` отклонит доставку с 419 ещё до того, как
+   middleware успеет что-то проверить. Объявляйте роут в `routes/api.php` (там
+   CSRF-middleware нет) либо исключайте его явно:
+
+   ```php
+   // Laravel 11+ — bootstrap/app.php
+   ->withMiddleware(function (Middleware $middleware) {
+       $middleware->validateCsrfTokens(except: ['webhooks/cryptopay']);
+   })
+
+   // Laravel <= 10 — app/Http/Middleware/VerifyCsrfToken.php
+   protected $except = ['webhooks/cryptopay'];
+
+   // либо точечно на самом роуте
+   Route::post('/webhooks/cryptopay', WebhookController::class)
+       ->middleware('cryptopay.webhook')
+       ->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class);
+   ```
+
+   Запрос аутентифицирует подпись `X-CryptoPay-Signature`; CSRF-защита к этому
+   ничего не добавляет.
+
+   **Важно (сырое тело):** ничего до этого middleware не должно читать/изменять
+   тело запроса (например, кастомный body-parsing middleware) — подпись
    считается по исходным байтам.
+
+   **Важно (секрет):** пустой `CRYPTOPAY_WEBHOOK_SECRET` — это не «проверка
+   выключена», а «проверку пройдёт кто угодно», поэтому `Webhook::verify()`
+   отклоняет такую конфигурацию. Проверяйте, что переменная реально
+   проброшена в окружение.
 
 ## Фасад `CryptoPay`
 

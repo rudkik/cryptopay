@@ -19,7 +19,7 @@ class StoreTokenRequest extends FormRequest
             'min_purchase' => ['nullable', 'regex:/^\d{1,18}(\.\d{1,18})?$/'],
             'max_purchase' => ['nullable', 'regex:/^\d{1,18}(\.\d{1,18})?$/'],
             'is_active' => ['nullable', 'boolean'],
-            'image_url' => ['nullable', 'url', 'max:2000'],
+            'image_url' => ['nullable', 'url:http,https', 'max:2000'],
         ];
     }
 }

@@ -4,6 +4,7 @@ import type { Logger } from '../logger.js';
 import type { BackendClient } from '../backend/client.js';
 import type { StateStore, BlockRef } from '../state/store.js';
 import type { NetworkCode, NetworkConfig, NetworkHealth, TokenConfig, TransactionReport } from '../types.js';
+import { redactSecrets } from '../redact.js';
 import { ScannerHealthState, healthPayload, type Scanner } from './base.js';
 import { ConfirmationTracker, type PendingTx, type VerifyResult } from './tracker.js';
 import { TRANSFER_TOPIC, addressToTopic, buildEvmReport, parseTransferLog, type RawLog } from './evmDecode.js';
@@ -112,7 +113,7 @@ export class EvmScanner implements Scanner {
     } catch (err) {
       // Не роняем цикл: транзакции останутся в pending и будут отправлены повторно.
       this.log.error(
-        { network: this.network, count: txs.length, err: (err as Error).message },
+        { network: this.network, count: txs.length, err: redactSecrets((err as Error).message) },
         'failed to report transactions to backend',
       );
     }
@@ -126,7 +127,7 @@ export class EvmScanner implements Scanner {
       // Трекер трактует исключение как 'unknown' и повторит на следующем head,
       // но причину надо видеть в логах.
       this.log.warn(
-        { network: this.network, txHash: tx.tx_hash, err: (err as Error).message },
+        { network: this.network, txHash: tx.tx_hash, err: redactSecrets((err as Error).message) },
         'receipt lookup failed, confirmation deferred',
       );
       throw err;
@@ -151,7 +152,12 @@ export class EvmScanner implements Scanner {
         const from = this.rescanFrom;
         this.rescanFrom = null;
         this.state.lastScanned = from - 1;
-        this.recentBlocks = this.recentBlocks.filter((b) => b.number < from);
+        // Оставляем только чекпоинты внутри окна реорга перед новой точкой:
+        // всё, что старше, уже недостижимо для реорга и лишь мешает (нода может
+        // вовсе не отдавать такие высоты).
+        this.recentBlocks = this.recentBlocks.filter(
+          (b) => b.number < from && b.number >= from - this.cfg.reorgDepth,
+        );
         this.persist();
       }
 
@@ -178,18 +184,43 @@ export class EvmScanner implements Scanner {
     } catch (err) {
       this.state.fail(err);
       this.log.error(
-        { network: this.network, err: (err as Error).message, consecutiveErrors: this.state.consecutiveErrors },
+        {
+          network: this.network,
+          err: redactSecrets((err as Error).message),
+          consecutiveErrors: this.state.consecutiveErrors,
+        },
         'evm scan tick failed',
       );
     }
   }
 
-  /** Проверка parentHash последнего просканированного блока (SPEC §7.6). */
+  /** Проверка хеша последнего просканированного блока (SPEC §7.6). */
   private async checkReorg(): Promise<void> {
     const last = this.recentBlocks.at(-1);
     if (!last) return;
 
-    const block = await this.provider.getBlock(last.number);
+    // Реорг глубже reorgDepth не бывает: такой чекпоинт финален, проверять нечего.
+    // Без этого условия отставший сканер вечно спрашивал у ноды древний блок,
+    // а публичные RPC отдают на архивные высоты 403 — исключение из checkReorg
+    // валило tick() целиком, и сканирование не возобновлялось никогда.
+    if (this.state.head !== null && last.number < this.state.head - this.cfg.reorgDepth) {
+      return;
+    }
+
+    let block: Awaited<ReturnType<JsonRpcProvider['getBlock']>>;
+    try {
+      block = await this.provider.getBlock(last.number);
+    } catch (err) {
+      // Не роняем тик: подтверждение всё равно требует receipt + совпадения
+      // blockHash, поэтому пропущенная проверка реорга не может привести
+      // к ложному `confirmed` — только к лишнему кругу сканирования.
+      this.log.warn(
+        { network: this.network, at: last.number, err: redactSecrets((err as Error).message) },
+        'reorg check skipped: block lookup failed',
+      );
+      return;
+    }
+
     if (block && block.hash && block.hash.toLowerCase() === last.hash.toLowerCase()) return;
 
     const rewindTo = Math.max(0, last.number - this.cfg.reorgDepth + 1);
@@ -250,7 +281,7 @@ export class EvmScanner implements Scanner {
     this.batchBlocks = Math.max(1, Math.floor(this.batchBlocks / 2));
     this.state.fail(err);
     this.log.warn(
-      { network: this.network, batchBlocks: this.batchBlocks, err: message },
+      { network: this.network, batchBlocks: this.batchBlocks, err: redactSecrets(message) },
       'rpc range error, shrinking evm batch',
     );
     return true;
@@ -312,7 +343,7 @@ export class EvmScanner implements Scanner {
       }
     } catch (err) {
       this.log.warn(
-        { network: this.network, blockNumber, err: (err as Error).message },
+        { network: this.network, blockNumber, err: redactSecrets((err as Error).message) },
         'cannot record block hash for reorg protection',
       );
     }

@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\SimulatePaymentRequest;
 use App\Http\Resources\Admin\AdminInvoiceResource;
 use App\Models\Invoice;
+use App\Services\AuditLogger;
 use App\Services\InvoiceService;
 use App\Services\PaymentSimulator;
 use Illuminate\Http\JsonResponse;
@@ -19,6 +20,7 @@ class InvoiceController extends Controller
     public function __construct(
         private readonly InvoiceService $invoices,
         private readonly PaymentSimulator $simulator,
+        private readonly AuditLogger $audit,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -73,7 +75,15 @@ class InvoiceController extends Controller
     {
         $model = Invoice::query()->with(['depositAddress', 'merchant'])->whereKey($invoice)->firstOrFail();
 
-        return new AdminInvoiceResource($this->invoices->cancel($model));
+        $cancelled = $this->invoices->cancel($model);
+
+        $this->audit->log('invoice.cancelled', $cancelled, [
+            'merchant_id' => $cancelled->merchant_id,
+            'amount' => $cancelled->amount,
+            'currency' => $cancelled->currency,
+        ]);
+
+        return new AdminInvoiceResource($cancelled);
     }
 
     public function simulatePayment(SimulatePaymentRequest $request, string $invoice): JsonResponse
@@ -85,6 +95,18 @@ class InvoiceController extends Controller
             $request->validated()['amount'] ?? null,
             $request->boolean('confirmed', true),
         );
+
+        // Every simulation mints money that never happened on chain, so it is
+        // always recorded, even though the endpoint only works outside production.
+        $this->audit->log('invoice.payment_simulated', $model, [
+            'merchant_id' => $model->merchant_id,
+            'amount' => $result['payload']['amount'] ?? null,
+            'currency' => $result['payload']['symbol'] ?? null,
+            'network' => $result['payload']['network'] ?? null,
+            'tx_hash' => $result['payload']['tx_hash'] ?? null,
+            'status' => $result['payload']['status'] ?? null,
+            'transaction_id' => $result['transaction_id'] ?? null,
+        ]);
 
         $invoiceData = (new AdminInvoiceResource(
             $model->refresh()->load(['depositAddress', 'transactions', 'merchant', 'tokenPurchase.token'])

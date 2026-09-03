@@ -4,6 +4,18 @@ import type { TokenConfig, TransactionReport } from '../types.js';
 
 /** Селектор transfer(address,uint256). */
 export const TRC20_TRANSFER_SELECTOR = 'a9059cbb';
+/** Селектор transferFrom(address,address,uint256). */
+export const TRC20_TRANSFER_FROM_SELECTOR = '23b872dd';
+
+/** 4 байта селектора + 2 слова по 32 байта. */
+const TRANSFER_DATA_LEN = 8 + 64 * 2;
+/** 4 байта селектора + 3 слова по 32 байта. */
+const TRANSFER_FROM_DATA_LEN = 8 + 64 * 3;
+
+const HEX64 = /^[0-9a-f]{64}$/;
+const TRON_HEX_ADDRESS = /^41[0-9a-f]{40}$/;
+
+export type TrcTransferMethod = 'transfer' | 'transferFrom';
 
 export interface TronContractParameter {
   value?: {
@@ -33,13 +45,25 @@ export interface TronBlock {
 export interface TronTransfer {
   txHash: string;
   contractHex: string;
+  /** Отправитель средств: owner для transfer, параметр `from` для transferFrom. */
   fromHex: string;
   from: string;
   toHex: string;
   to: string;
+  /** msg.sender транзакции (для transferFrom это spender, а не владелец средств). */
+  ownerHex: string;
+  method: TrcTransferMethod;
   valueRaw: bigint;
   blockNumber: number;
   blockHash: string;
+}
+
+export interface DecodedTrcTransfer {
+  method: TrcTransferMethod;
+  toHex: string;
+  /** Заполняется только для transferFrom. */
+  fromHex: string | null;
+  valueRaw: bigint;
 }
 
 function stripHexPrefix(value: string): string {
@@ -47,61 +71,118 @@ function stripHexPrefix(value: string): string {
 }
 
 export function blockNumberOf(block: TronBlock): number | null {
-  const n = block.block_header?.raw_data?.number;
-  return typeof n === 'number' ? n : null;
+  const n = block?.block_header?.raw_data?.number;
+  return typeof n === 'number' && Number.isInteger(n) && n >= 0 ? n : null;
+}
+
+/** blockID/txID — ровно 32 байта hex в нижнем регистре. */
+export function isTronHash(value: unknown): value is string {
+  return typeof value === 'string' && HEX64.test(value.toLowerCase());
+}
+
+/** ABI-слово с адресом: 12 нулевых байт (24 нуля) + 20 байт. */
+function addressWordToHex(word: string): string | null {
+  if (word.length !== 64) return null;
+  if (!/^0{24}[0-9a-f]{40}$/.test(word)) return null;
+  const hex = `41${word.slice(24)}`;
+  return TRON_HEX_ADDRESS.test(hex) ? hex : null;
+}
+
+function amountWord(word: string): bigint | null {
+  if (!HEX64.test(word)) return null;
+  return BigInt(`0x${word}`);
 }
 
 /**
- * Разбор данных TriggerSmartContract: `a9059cbb` ‖ to(32) ‖ amount(32).
- * `to = 41 + data[32..72]`, `amount = BigInt('0x' + data[72..136])` (SPEC §7.3).
+ * Разбор `data` вызова TriggerSmartContract.
+ *
+ * Поддерживаются оба способа перевести TRC-20 на депозитный адрес:
+ *  - `transfer(address to, uint256 value)`      — `a9059cbb`, ровно 136 hex-символов;
+ *  - `transferFrom(address from, address to, uint256 value)` — `23b872dd`, ровно 200.
+ *
+ * transferFrom нужен потому, что часть бирж и смарт-кошельков выводит средства
+ * именно им (msg.sender — spender, а деньги уходят с `from`). В EVM-сетях этот
+ * случай уже покрыт: `transferFrom` эмитит тот же самый event `Transfer`,
+ * который мы и читаем через getLogs. В Tron событий нет — читаем calldata,
+ * поэтому селектор приходится разбирать отдельно.
+ *
+ * Длина проверяется строго (`===`): «хвост» после параметров означает нештатный
+ * вызов, который мы не берёмся интерпретировать.
  */
-export function decodeTrc20TransferData(data: string): { toHex: string; valueRaw: bigint } | null {
+export function decodeTrc20TransferData(data: string): DecodedTrcTransfer | null {
+  if (typeof data !== 'string') return null;
   const hex = stripHexPrefix(data).toLowerCase();
-  if (hex.length < 136) return null;
-  if (!hex.startsWith(TRC20_TRANSFER_SELECTOR)) return null;
-  const toHex = `41${hex.slice(32, 72)}`;
-  if (!/^41[0-9a-f]{40}$/.test(toHex)) return null;
-  const amountHex = hex.slice(72, 136);
-  if (!/^[0-9a-f]{64}$/.test(amountHex)) return null;
-  return { toHex, valueRaw: BigInt(`0x${amountHex}`) };
+  if (!/^[0-9a-f]*$/.test(hex)) return null;
+
+  if (hex.startsWith(TRC20_TRANSFER_SELECTOR)) {
+    if (hex.length !== TRANSFER_DATA_LEN) return null;
+    const toHex = addressWordToHex(hex.slice(8, 72));
+    const valueRaw = amountWord(hex.slice(72, 136));
+    if (toHex === null || valueRaw === null) return null;
+    return { method: 'transfer', toHex, fromHex: null, valueRaw };
+  }
+
+  if (hex.startsWith(TRC20_TRANSFER_FROM_SELECTOR)) {
+    if (hex.length !== TRANSFER_FROM_DATA_LEN) return null;
+    const fromHex = addressWordToHex(hex.slice(8, 72));
+    const toHex = addressWordToHex(hex.slice(72, 136));
+    const valueRaw = amountWord(hex.slice(136, 200));
+    if (fromHex === null || toHex === null || valueRaw === null) return null;
+    return { method: 'transferFrom', toHex, fromHex, valueRaw };
+  }
+
+  return null;
 }
 
 /**
  * Извлекает успешные TRC-20 переводы на отслеживаемые контракты из блока TronGrid.
  * `contracts` — карта hex-адрес контракта (41…, нижний регистр) -> конфиг токена.
+ *
+ * Блок с битым/отсутствующим blockID или номером не разбирается вовсе: без хеша
+ * блока отчёт в backend нечем привязать к цепочке.
  */
 export function parseTronBlock(block: TronBlock, contracts: Map<string, TokenConfig>): TronTransfer[] {
   const blockNumber = blockNumberOf(block);
-  const blockHash = block.blockID ?? '';
   if (blockNumber === null) return [];
+
+  const blockHash = typeof block.blockID === 'string' ? block.blockID.toLowerCase() : '';
+  if (!isTronHash(blockHash)) return [];
 
   const out: TronTransfer[] = [];
 
   for (const tx of block.transactions ?? []) {
+    if (!tx || typeof tx !== 'object') continue;
+    // Успех на момент обнаружения; перед `confirmed` результат перепроверяется
+    // через wallet/gettransactioninfobyid (SPEC §7.4).
     if (tx.ret?.[0]?.contractRet !== 'SUCCESS') continue;
 
-    const contract = tx.raw_data?.contract?.[0];
+    const txHash = typeof tx.txID === 'string' ? tx.txID.toLowerCase() : '';
+    if (!isTronHash(txHash)) continue;
+
+    const contracts0 = tx.raw_data?.contract;
+    if (!Array.isArray(contracts0) || contracts0.length !== 1) continue;
+    const contract = contracts0[0];
     if (!contract || contract.type !== 'TriggerSmartContract') continue;
 
     const value = contract.parameter?.value;
-    const contractHex = value?.contract_address ? stripHexPrefix(value.contract_address).toLowerCase() : '';
-    if (!contractHex || !contracts.has(contractHex)) continue;
+    const contractHex =
+      typeof value?.contract_address === 'string' ? stripHexPrefix(value.contract_address).toLowerCase() : '';
+    if (!TRON_HEX_ADDRESS.test(contractHex) || !contracts.has(contractHex)) continue;
 
     const data = value?.data;
-    if (!data) continue;
+    if (typeof data !== 'string' || data === '') continue;
     const decoded = decodeTrc20TransferData(data);
     if (!decoded) continue;
 
-    const txHash = tx.txID ?? '';
-    if (!txHash) continue;
-
-    const fromHex = stripHexPrefix(value?.owner_address ?? '').toLowerCase();
+    const ownerHex = typeof value?.owner_address === 'string' ? stripHexPrefix(value.owner_address).toLowerCase() : '';
+    // Для transferFrom деньги списываются с параметра `from`, а не с msg.sender.
+    const fromHex = decoded.fromHex ?? ownerHex;
 
     let to: string;
     let from: string;
     try {
       to = tronHexToBase58(decoded.toHex);
-      from = fromHex ? tronHexToBase58(fromHex) : '';
+      from = TRON_HEX_ADDRESS.test(fromHex) ? tronHexToBase58(fromHex) : '';
     } catch {
       continue;
     }
@@ -113,6 +194,8 @@ export function parseTronBlock(block: TronBlock, contracts: Map<string, TokenCon
       from,
       toHex: decoded.toHex,
       to,
+      ownerHex,
+      method: decoded.method,
       valueRaw: decoded.valueRaw,
       blockNumber,
       blockHash,
@@ -143,7 +226,9 @@ export function buildTronReport(
     status: 'detected',
     raw: {
       contract_hex: transfer.contractHex,
-      owner_address_hex: transfer.fromHex,
+      method: transfer.method,
+      owner_address_hex: transfer.ownerHex,
+      from_address_hex: transfer.fromHex,
       to_address_hex: transfer.toHex,
       decimals: token.decimals,
     },

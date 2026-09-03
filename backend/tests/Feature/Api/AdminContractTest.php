@@ -46,7 +46,7 @@ class AdminContractTest extends TestCase
 
         // One transaction and, via the status change, one webhook delivery.
         $this->withHeaders($this->internalHeaders())->postJson('/api/internal/transactions', [
-            'network' => 'tron', 'tx_hash' => 'tx-contract', 'log_index' => 0, 'symbol' => 'USDT',
+            'network' => 'tron', 'tx_hash' => $this->txHash('contract'), 'log_index' => 0, 'symbol' => 'USDT',
             'to_address' => $this->invoice->depositAddress->address, 'amount' => '100',
             'amount_raw' => '100000000', 'confirmations' => 19, 'status' => 'confirmed',
         ])->assertOk();
@@ -91,7 +91,7 @@ class AdminContractTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.merchant.name', 'Acme Ltd')
             ->assertJsonPath('data.0.confirmations_required', 19)
-            ->assertJsonPath('data.0.explorer_url', 'https://tronscan.org/#/transaction/tx-contract');
+            ->assertJsonPath('data.0.explorer_url', 'https://tronscan.org/#/transaction/'.$this->txHash('contract'));
 
         $this->withToken($this->token)->getJson('/api/admin/tokens')
             ->assertOk()

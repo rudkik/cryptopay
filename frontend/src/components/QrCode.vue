@@ -15,6 +15,18 @@ const props = withDefaults(
 const svg = ref<string>('')
 const failed = ref(false)
 
+/**
+ * Defence in depth for the `v-html` below. `qrcode` renders the payload into a
+ * module matrix and emits only `<svg>` + `<path>` elements — the value is never
+ * interpolated as markup — but because this component is mounted on the public
+ * checkout we refuse to inject anything that does not match that exact shape.
+ */
+const SVG_SHAPE = /^<svg[^>]*>(?:<path[^>]*\/>)+<\/svg>$/
+
+function isPlainQrSvg(markup: string): boolean {
+  return SVG_SHAPE.test(markup.trim()) && !/[<\s]on[a-z]+\s*=|<script|xlink:href|href\s*=/i.test(markup)
+}
+
 async function render(): Promise<void> {
   failed.value = false
   if (!props.value) {
@@ -22,13 +34,15 @@ async function render(): Promise<void> {
     return
   }
   try {
-    svg.value = await QRCode.toString(props.value, {
+    const markup = await QRCode.toString(props.value, {
       type: 'svg',
       errorCorrectionLevel: 'M',
       margin: 1,
       width: props.size,
       color: { dark: '#0a0613', light: '#ffffff' },
     })
+    if (!isPlainQrSvg(markup)) throw new Error('unexpected QR markup')
+    svg.value = markup
   } catch {
     failed.value = true
     svg.value = ''
@@ -43,7 +57,10 @@ watch(() => [props.value, props.size], render, { immediate: true })
     class="relative inline-flex items-center justify-center rounded-2xl bg-white p-3 shadow-glow"
     :style="{ width: `${size + 24}px`, height: `${size + 24}px` }"
   >
-    <!-- qrcode's SVG output is generated locally from `value`; no external HTML is injected. -->
+    <!--
+      qrcode's SVG output is generated locally from `value`; no external HTML is
+      injected, and `isPlainQrSvg()` re-checks the shape before it is bound.
+    -->
     <div
       v-if="svg"
       class="h-full w-full [&>svg]:h-full [&>svg]:w-full"

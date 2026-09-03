@@ -7,6 +7,7 @@ import Spinner from '@/components/Spinner.vue'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage, fieldErrors } from '@/composables/useErrorHandler'
 import { isApiError } from '@/api/http'
+import { safeInternalPath } from '@/utils/url'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -19,10 +20,12 @@ const submitting = ref(false)
 const formError = ref('')
 const errors = ref<Record<string, string>>({})
 
-const redirect = computed(() => {
-  const target = route.query.redirect
-  return typeof target === 'string' && target.startsWith('/') ? target : '/admin'
-})
+/**
+ * Only same-origin paths are honoured. A bare `startsWith('/')` check would let
+ * `//evil.example` (protocol-relative) and `/\evil.example` through as an open
+ * redirect off a page that has just accepted admin credentials.
+ */
+const redirect = computed(() => safeInternalPath(route.query.redirect, '/admin'))
 
 async function submit(): Promise<void> {
   if (submitting.value) return

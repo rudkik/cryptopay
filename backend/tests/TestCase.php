@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use App\Enums\NetworkCode;
 use App\Models\Merchant;
 use App\Models\User;
 use App\Services\ApiKeyService;
@@ -10,6 +11,7 @@ use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Testing\TestResponse;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -82,6 +84,46 @@ abstract class TestCase extends BaseTestCase
             'X-Internal-Token' => (string) config('services.internal.token'),
             'Accept' => 'application/json',
         ], $extra);
+    }
+
+    /**
+     * A transaction hash in the shape the internal API requires: `0x` + 64 hex
+     * on EVM chains, bare 64 hex on Tron.
+     */
+    protected function txHash(string $seed, string $network = 'tron'): string
+    {
+        $hex = hash('sha256', $seed);
+
+        return NetworkCode::isEvmCode($network) ? '0x'.$hex : $hex;
+    }
+
+    /**
+     * The API uses the SPEC §6 envelope, so validation failures land in
+     * `error.details` rather than PHPUnit's expected `errors` key.
+     */
+    protected function assertInvalidField(TestResponse $response, string $field): void
+    {
+        $response->assertStatus(422)->assertJsonPath('error.code', 'validation_error');
+
+        $this->assertArrayHasKey(
+            $field,
+            (array) $response->json('error.details'),
+            "Expected a validation error for [{$field}]; got: ".json_encode($response->json('error.details')),
+        );
+    }
+
+    /**
+     * Laravel resolves the auth guard once per application instance, and a
+     * feature test reuses one instance across every request it makes. Without
+     * this, the second request in a test silently keeps the first request's
+     * user — which quietly defeats any test about revocation, deactivation or
+     * "acting as someone else".
+     */
+    protected function forgetAuth(): static
+    {
+        $this->app['auth']->forgetGuards();
+
+        return $this;
     }
 
     protected function adminToken(?User $user = null): string

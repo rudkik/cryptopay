@@ -19,11 +19,25 @@ use Illuminate\Support\Str;
  */
 class PaymentSimulator
 {
+    /**
+     * Leading hex of every simulated hash. Real hashes are uniformly random, so
+     * this is how the simulator recognises its own rows without breaking the
+     * per-network hash format the ingest endpoint enforces.
+     */
+    public const MARKER = 'f00dbabe';
+
     public function __construct(private readonly TransactionIngestService $ingest) {}
 
+    /**
+     * Simulated payments mint a confirmed credit out of nothing, so the config
+     * flag alone is not enough to enable them: `.env.example` ships
+     * SIMULATION_ENABLED=true, and a production deployment that inherits it
+     * would hand every admin a mint button. The environment must agree.
+     */
     public function isEnabled(): bool
     {
-        return (bool) config('services.simulation.enabled');
+        return (bool) config('services.simulation.enabled')
+            && app()->environment(['local', 'testing']);
     }
 
     /**
@@ -32,7 +46,9 @@ class PaymentSimulator
     public function simulate(Invoice $invoice, ?string $amount = null, bool $confirmed = true): array
     {
         if (! $this->isEnabled()) {
-            throw new ForbiddenException('Payment simulation is disabled. Set SIMULATION_ENABLED=true to use it.');
+            throw new ForbiddenException(
+                'Payment simulation is disabled. It requires SIMULATION_ENABLED=true and a local or testing environment.'
+            );
         }
 
         $invoice->loadMissing('depositAddress');
@@ -57,14 +73,16 @@ class PaymentSimulator
             $amount = Money::normalize($pending->amount);
             $txHash = $pending->tx_hash;
             $blockNumber = (int) $pending->block_number;
-            $blockHash = $pending->block_hash ?? '0xsim'.bin2hex(random_bytes(30));
+            $blockHash = $pending->block_hash ?? self::fakeHash($isEvm);
             $fromAddress = $pending->from_address;
         } else {
             $amount = Money::normalize($amount ?? $invoice->amount);
-            $txHash = '0xsim'.bin2hex(random_bytes(30));
+            $txHash = self::fakeHash($isEvm);
             $blockNumber = (int) (($network?->last_scanned_block ?? 0) + 1);
-            $blockHash = '0xsim'.bin2hex(random_bytes(30));
-            $fromAddress = $isEvm ? '0xs1m'.str_repeat('a', 36) : 'TSimulated'.Str::upper(Str::random(24));
+            $blockHash = self::fakeHash($isEvm);
+            $fromAddress = $isEvm
+                ? '0x'.self::MARKER.bin2hex(random_bytes(16))
+                : 'TSimulated'.Str::upper(Str::random(24));
         }
 
         $payload = [
@@ -93,8 +111,21 @@ class PaymentSimulator
     {
         return $invoice->transactions()
             ->where('status', TransactionStatus::Detected->value)
-            ->where('tx_hash', 'like', '0xsim%')
+            ->where(fn ($q) => $q
+                ->where('tx_hash', 'like', self::MARKER.'%')
+                ->orWhere('tx_hash', 'like', '0x'.self::MARKER.'%'))
             ->orderBy('created_at')
             ->first();
+    }
+
+    /**
+     * A hash the ingest endpoint will accept (EVM: 0x + 64 hex, Tron: 64 hex)
+     * that is still recognisable as simulated by its leading marker.
+     */
+    private static function fakeHash(bool $isEvm): string
+    {
+        $hex = self::MARKER.bin2hex(random_bytes(28));
+
+        return $isEvm ? '0x'.$hex : $hex;
     }
 }

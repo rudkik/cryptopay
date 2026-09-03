@@ -44,7 +44,7 @@ class InvoiceExpiryTest extends TestCase
     {
         $this->withHeaders($this->internalHeaders())->postJson('/api/internal/transactions', [
             'network' => $invoice->network_code,
-            'tx_hash' => 'tx-'.substr(md5($invoice->id.$amount.$status), 0, 24),
+            'tx_hash' => $this->txHash($invoice->id.$amount.$status, $invoice->network_code),
             'log_index' => 0,
             'symbol' => $invoice->currency,
             'to_address' => $invoice->depositAddress->address,

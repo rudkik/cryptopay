@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { ExternalLink } from 'lucide-vue-next'
 import CopyButton from './CopyButton.vue'
 import { truncateMiddle } from '@/utils/format'
+import { safeUrl } from '@/utils/url'
 
 const props = withDefaults(
   defineProps<{
@@ -21,26 +22,33 @@ const props = withDefaults(
 )
 
 const display = computed(() => (props.full ? (props.value ?? '—') : truncateMiddle(props.value, props.head, props.tail)))
+
+/**
+ * Explorer URLs come from admin-editable network settings and are echoed back by
+ * the API; anything that is not plain http(s) is dropped and the value renders
+ * as inert text instead of a link.
+ */
+const linkHref = computed(() => safeUrl(props.href))
 </script>
 
 <template>
   <span class="inline-flex min-w-0 items-center gap-1">
     <component
-      :is="href ? 'a' : 'span'"
-      :href="href ?? undefined"
-      :target="href ? '_blank' : undefined"
-      :rel="href ? 'noopener noreferrer' : undefined"
+      :is="linkHref ? 'a' : 'span'"
+      :href="linkHref ?? undefined"
+      :target="linkHref ? '_blank' : undefined"
+      :rel="linkHref ? 'noopener noreferrer' : undefined"
       class="mono min-w-0 truncate text-muted"
       :class="[
         size === 'sm' ? 'text-xs' : '',
-        href ? 'inline-flex items-center gap-1 transition-colors hover:text-primary-hover' : '',
+        linkHref ? 'inline-flex items-center gap-1 transition-colors hover:text-primary-hover' : '',
         full ? 'break-all' : '',
       ]"
       :title="value ?? undefined"
       @click.stop
     >
       {{ display }}
-      <ExternalLink v-if="href" :size="12" class="shrink-0 opacity-70" aria-hidden="true" />
+      <ExternalLink v-if="linkHref" :size="12" class="shrink-0 opacity-70" aria-hidden="true" />
     </component>
     <CopyButton v-if="copyable && value" :value="value" :label="label" :size="12" />
   </span>

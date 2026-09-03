@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\WebhookDeliveryStatus;
 use App\Models\WebhookDelivery;
 use App\Services\WebhookService;
+use App\Support\OutboundUrlGuard;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
@@ -63,6 +64,22 @@ class SendWebhookJob implements ShouldQueue
 
         $attempts = $delivery->attempts + 1;
 
+        // Re-checked here and not only at write time: DNS can be re-pointed at
+        // a private address after the URL was accepted, and this job runs with
+        // the queue worker's network reach (postgres, redis, watcher, and any
+        // cloud metadata endpoint).
+        if ($reason = OutboundUrlGuard::reject((string) $delivery->url)) {
+            Log::warning('Webhook delivery blocked by the outbound URL guard', [
+                'delivery' => $delivery->id,
+                'merchant_id' => $delivery->merchant_id,
+                'reason' => $reason,
+            ]);
+
+            $this->fail($delivery, $attempts, $signature, null, null, 'Blocked: '.$reason);
+
+            return;
+        }
+
         try {
             $response = Http::withBody($body, 'application/json')
                 ->withHeaders([
@@ -71,7 +88,10 @@ class SendWebhookJob implements ShouldQueue
                     'X-CryptoPay-Timestamp' => (string) $timestamp,
                     'X-CryptoPay-Signature' => $signature,
                 ])
-                ->timeout(15)
+                // A 30x to http://watcher:3100 would walk straight past the
+                // guard above, so redirects are not followed at all.
+                ->withoutRedirecting()
+                ->timeout((int) config('services.webhooks.timeout', 10))
                 ->post($delivery->url);
 
             $status = $response->status();

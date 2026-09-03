@@ -6,6 +6,11 @@ const SIGNATURE_HEADER = 'x-cryptopay-signature'
 const TIMESTAMP_HEADER = 'x-cryptopay-timestamp'
 const DELIVERY_HEADER = 'x-cryptopay-delivery'
 
+/** Единственная форма подписи, которую отдаёт бэкенд: `sha256=` + 64 hex-символа. */
+const SIGNATURE_PATTERN = /^sha256=[0-9a-f]{64}$/
+/** Unix-таймстамп — беззнаковое десятичное целое, и ничего кроме. */
+const TIMESTAMP_PATTERN = /^[0-9]{1,19}$/
+
 export interface VerifyWebhookOptions {
   /** Допустимое расхождение таймстампа в секундах. По умолчанию 300. `<= 0` отключает проверку. */
   tolerance?: number
@@ -79,22 +84,37 @@ export function verifyWebhook(
 ): WebhookEvent {
   const tolerance = options?.tolerance ?? 300
 
+  // Пустой секрет — это не «нет проверки», а «проверку пройдёт кто угодно»:
+  // HMAC с пустым ключом вычисляется тривиально. Отсутствующий
+  // CRYPTOPAY_WEBHOOK_SECRET обязан приводить к отказу, а не к приёму.
+  if (typeof secret !== 'string' || secret.length === 0) {
+    throw new SignatureError('CryptoPay webhook: secret is not configured')
+  }
+
   const signatureHeader = getHeader(headers, SIGNATURE_HEADER)
   if (!signatureHeader) {
     throw new SignatureError('CryptoPay webhook: missing X-CryptoPay-Signature header')
+  }
+
+  // Hex на проводе регистронезависим, а сравнение ниже — нет.
+  const signature = signatureHeader.toLowerCase()
+  if (!SIGNATURE_PATTERN.test(signature)) {
+    throw new SignatureError('CryptoPay webhook: malformed X-CryptoPay-Signature header')
   }
 
   const timestampHeader = getHeader(headers, TIMESTAMP_HEADER)
   if (!timestampHeader) {
     throw new SignatureError('CryptoPay webhook: missing X-CryptoPay-Timestamp header')
   }
-  const timestamp = Number(timestampHeader)
-  if (!Number.isFinite(timestamp)) {
+  if (!TIMESTAMP_PATTERN.test(timestampHeader)) {
     throw new SignatureError('CryptoPay webhook: X-CryptoPay-Timestamp header is not a valid number')
   }
+  const timestamp = Number(timestampHeader)
 
   if (tolerance > 0) {
     const now = Math.floor(Date.now() / 1000)
+    // Math.abs закрывает окно в ОБЕ стороны: и повтор протухшей доставки,
+    // и таймстамп из будущего отвергаются одинаково.
     if (Math.abs(now - timestamp) > tolerance) {
       throw new SignatureError(
         `CryptoPay webhook: timestamp is outside of the allowed tolerance (${tolerance}s)`,
@@ -104,9 +124,11 @@ export function verifyWebhook(
 
   const bodyBuf = toBuffer(rawBody)
   const expectedSignature = signWebhook(secret, timestampHeader, bodyBuf)
-  if (!safeCompare(signatureHeader, expectedSignature)) {
+  if (!safeCompare(signature, expectedSignature)) {
     throw new SignatureError('CryptoPay webhook: signature mismatch')
   }
+
+  // Только теперь телу можно доверять настолько, чтобы его разобрать.
 
   let payload: WebhookPayload
   try {
@@ -175,7 +197,12 @@ export function cryptoPayWebhook(
           if (options?.onError) {
             options.onError(err, req, res)
           } else {
-            res.status(400).json({ error: { code: 'invalid_signature', message: err.message, details: {} } })
+            // Конкретная причина (нет заголовка / протухший таймстамп / несовпадение
+            // подписи) полезна оператору и ровно так же полезна тому, кто перебирает
+            // подписи. Наружу — общий текст, детали остаются в `err` для onError.
+            res.status(400).json({
+              error: { code: 'invalid_signature', message: 'Invalid webhook signature.', details: {} },
+            })
           }
           return
         }

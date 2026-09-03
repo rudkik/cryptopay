@@ -1,4 +1,4 @@
-import type { TronBlock } from './tronDecode.js';
+import { blockNumberOf, type TronBlock } from './tronDecode.js';
 
 export interface TronTransactionInfo {
   id?: string;
@@ -64,6 +64,12 @@ export class TronClient {
   async getBlockByNum(num: number): Promise<TronBlock | null> {
     const res = await this.post<TronBlock>('wallet/getblockbynum', { num });
     if (!res || !res.block_header) return null;
+    // Нода обязана вернуть ровно запрошенный блок. Расхождение — признак битого
+    // ответа/прокси; молча принять его значит приписать транзакции чужой высоте.
+    const actual = blockNumberOf(res);
+    if (actual !== num) {
+      throw new Error(`TronGrid getblockbynum(${num}) returned block ${String(actual)}`);
+    }
     return res;
   }
 

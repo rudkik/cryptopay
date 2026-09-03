@@ -86,7 +86,7 @@ class TokenPurchaseTest extends TestCase
 
         $this->withHeaders($this->internalHeaders())->postJson('/api/internal/transactions', [
             'network' => 'tron',
-            'tx_hash' => 'tx-token-purchase',
+            'tx_hash' => $this->txHash('token-purchase'),
             'log_index' => 0,
             'symbol' => 'USDT',
             'to_address' => $invoice->depositAddress->address,
@@ -125,7 +125,7 @@ class TokenPurchaseTest extends TestCase
 
         $payload = [
             'network' => 'tron',
-            'tx_hash' => 'tx-token-purchase',
+            'tx_hash' => $this->txHash('token-purchase'),
             'log_index' => 0,
             'symbol' => 'USDT',
             'to_address' => $invoice->depositAddress->address,

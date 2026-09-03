@@ -37,6 +37,14 @@ return [
         'timeout' => (int) env('WATCHER_TIMEOUT', 10),
     ],
 
+    'webhooks' => [
+        // Local development only: allows a webhook_url that points at a private
+        // or loopback address (host.docker.internal, 127.0.0.1, a compose
+        // service name). Never enable this on a reachable deployment.
+        'allow_private' => filter_var(env('WEBHOOK_ALLOW_PRIVATE', false), FILTER_VALIDATE_BOOLEAN),
+        'timeout' => min(10, max(1, (int) env('WEBHOOK_TIMEOUT', 10))),
+    ],
+
     'simulation' => [
         'enabled' => filter_var(env('SIMULATION_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
     ],

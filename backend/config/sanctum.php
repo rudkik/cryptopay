@@ -50,7 +50,9 @@ return [
     |
     */
 
-    'expiration' => null,
+    // Admin panel tokens live in localStorage; an unbounded token there is a
+    // permanent credential. 12 hours covers a working day.
+    'expiration' => (int) env('SANCTUM_EXPIRATION', 720),
 
     /*
     |--------------------------------------------------------------------------

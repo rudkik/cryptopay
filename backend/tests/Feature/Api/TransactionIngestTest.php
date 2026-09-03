@@ -46,7 +46,7 @@ class TransactionIngestTest extends TestCase
     {
         return array_merge([
             'network' => $invoice->network_code,
-            'tx_hash' => 'tx-'.substr(md5($invoice->id.$amount), 0, 32),
+            'tx_hash' => $this->txHash($invoice->id.$amount, $invoice->network_code),
             'log_index' => 0,
             'contract_address' => 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
             'symbol' => $invoice->currency,
@@ -181,7 +181,7 @@ class TransactionIngestTest extends TestCase
         $this->withHeaders($this->internalHeaders())
             ->postJson('/api/internal/transactions', [
                 'network' => 'tron',
-                'tx_hash' => 'tx-unknown',
+                'tx_hash' => $this->txHash('unknown'),
                 'symbol' => 'USDT',
                 'to_address' => 'TNotOneOfOurs00000000000000000000',
                 'amount' => '5',

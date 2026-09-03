@@ -32,6 +32,7 @@ import {
   subtractAmounts,
   truncateMiddle,
 } from '@/utils/format'
+import { safeUrl } from '@/utils/url'
 
 const props = defineProps<{ id: string }>()
 
@@ -72,7 +73,35 @@ const pendingTransactions = computed(
   () => invoice.value?.transactions?.filter((tx) => tx.status !== 'orphaned') ?? [],
 )
 
-const explorerAddressUrl = computed(() => invoice.value?.explorer_address_url ?? null)
+/**
+ * `success_url` / `cancel_url` are merchant-supplied and rendered on a page open
+ * to untrusted end users, so they are accepted only as plain http(s) links —
+ * a `javascript:` value would otherwise run script on the checkout. Unsafe
+ * values simply hide the button; navigation always requires a user click
+ * (there is no auto-redirect anywhere on this page).
+ */
+const successUrl = computed(() => safeUrl(invoice.value?.success_url))
+const cancelUrl = computed(() => safeUrl(invoice.value?.cancel_url))
+const explorerAddressUrl = computed(() => safeUrl(invoice.value?.explorer_address_url))
+
+/** Explorer links per transaction, sanitised the same way. */
+function txExplorerUrl(url: string | null | undefined): string | null {
+  return safeUrl(url)
+}
+
+/**
+ * The QR must encode the very address shown and copied below it — two payment
+ * destinations on one page is a payment-redirection bug waiting to happen.
+ * `qr_payload` is the bare address (Tron) or an EIP-681 URI embedding it (EVM),
+ * so it has to contain `invoice.address` verbatim; if it ever does not, we fall
+ * back to encoding the displayed address and drop the payload.
+ */
+const qrValue = computed(() => {
+  const current = invoice.value
+  if (!current?.address) return ''
+  const payload = current.qr_payload ?? ''
+  return payload.includes(current.address) ? payload : current.address
+})
 
 async function load(silent = false): Promise<void> {
   if (!silent) loading.value = true
@@ -178,10 +207,10 @@ onMounted(async () => {
             </div>
 
             <a
-              v-if="invoice.success_url"
-              :href="invoice.success_url"
+              v-if="successUrl"
+              :href="successUrl"
               class="btn-primary mt-5 w-full"
-              rel="noopener"
+              rel="noopener noreferrer"
             >
               Continue
               <ArrowUpRight :size="15" aria-hidden="true" />
@@ -199,8 +228,8 @@ onMounted(async () => {
                 class="flex items-center justify-between gap-3 text-xs"
               >
                 <a
-                  v-if="tx.explorer_url"
-                  :href="tx.explorer_url"
+                  v-if="txExplorerUrl(tx.explorer_url)"
+                  :href="txExplorerUrl(tx.explorer_url)!"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="mono inline-flex items-center gap-1 text-muted transition-colors hover:text-primary-hover"
@@ -227,10 +256,10 @@ onMounted(async () => {
             This invoice was cancelled by the merchant. Do not send any funds.
           </p>
           <a
-            v-if="invoice.cancel_url"
-            :href="invoice.cancel_url"
+            v-if="cancelUrl"
+            :href="cancelUrl"
             class="btn-secondary mt-5"
-            rel="noopener"
+            rel="noopener noreferrer"
           >
             Return to merchant
             <ArrowUpRight :size="14" aria-hidden="true" />
@@ -254,10 +283,10 @@ onMounted(async () => {
             no longer tracked here.
           </p>
           <a
-            v-if="invoice.cancel_url"
-            :href="invoice.cancel_url"
+            v-if="cancelUrl"
+            :href="cancelUrl"
             class="btn-secondary mt-5"
-            rel="noopener"
+            rel="noopener noreferrer"
           >
             Return to merchant
             <ArrowUpRight :size="14" aria-hidden="true" />
@@ -313,7 +342,7 @@ onMounted(async () => {
 
           <div class="flex flex-col items-center gap-5 px-6 py-6">
             <QrCode
-              :value="invoice.qr_payload"
+              :value="qrValue"
               :size="192"
               :label="`QR code for ${invoice.amount} ${invoice.currency} on ${invoice.network_name}`"
             />
@@ -390,8 +419,8 @@ onMounted(async () => {
                 <li v-for="tx in pendingTransactions" :key="tx.tx_hash" class="space-y-1.5">
                   <div class="flex items-center justify-between gap-3 text-xs">
                     <a
-                      v-if="tx.explorer_url"
-                      :href="tx.explorer_url"
+                      v-if="txExplorerUrl(tx.explorer_url)"
+                      :href="txExplorerUrl(tx.explorer_url)!"
                       target="_blank"
                       rel="noopener noreferrer"
                       class="mono inline-flex items-center gap-1 text-muted transition-colors hover:text-primary-hover"

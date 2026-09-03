@@ -22,13 +22,30 @@ export class ApiError extends CryptoPayError {
   readonly code: string
   readonly details: ApiErrorDetails
   readonly status: number
+  /**
+   * Секунды до повторной попытки из заголовка `Retry-After` (429/503), либо `null`.
+   *
+   * SDK никогда не повторяет запрос сам — бэкофф остаётся решением вызывающего кода,
+   * поэтому здесь нет скрытого цикла ретраев, способного добить лимитированный API.
+   */
+  readonly retryAfter: number | null
 
-  constructor(message: string, options: { code: string; details?: ApiErrorDetails; status: number; cause?: unknown }) {
+  constructor(
+    message: string,
+    options: {
+      code: string
+      details?: ApiErrorDetails
+      status: number
+      cause?: unknown
+      retryAfter?: number | null
+    },
+  ) {
     super(message, options.cause !== undefined ? { cause: options.cause } : undefined)
     this.name = 'ApiError'
     this.code = options.code
     this.details = options.details ?? {}
     this.status = options.status
+    this.retryAfter = options.retryAfter ?? null
     Object.setPrototypeOf(this, ApiError.prototype)
   }
 

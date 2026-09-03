@@ -31,6 +31,7 @@ import type { Invoice, InvoiceStatus, WebhookDelivery } from '@/api/types'
 import { isApiError } from '@/api/http'
 import { reportError } from '@/composables/useErrorHandler'
 import { toast } from '@/utils/toast'
+import { safeUrl } from '@/utils/url'
 import {
   compareAmounts,
   formatDateTime,
@@ -62,6 +63,21 @@ const transactions = computed(() => invoice.value?.transactions ?? [])
 const webhookDeliveries = computed(() => invoice.value?.webhooks ?? [])
 
 const canCancel = computed(() => invoice.value?.status === 'pending')
+
+/** Hosted-checkout link, accepted only as a plain http(s) URL. */
+const paymentUrl = computed(() => safeUrl(invoice.value?.payment_url))
+
+/**
+ * The QR must encode exactly the deposit address shown next to it. `qr_payload`
+ * is the bare address (Tron) or an EIP-681 URI embedding it (EVM), so it has to
+ * contain `invoice.address`; otherwise we encode the displayed address instead.
+ */
+const qrValue = computed(() => {
+  const inv = invoice.value
+  if (!inv?.address) return ''
+  const payload = inv.qr_payload ?? ''
+  return payload.includes(inv.address) ? payload : inv.address
+})
 
 const remaining = computed(() =>
   invoice.value ? subtractAmounts(invoice.value.amount, invoice.value.amount_confirmed, true) : '0',
@@ -277,7 +293,8 @@ onMounted(() => void load())
               </div>
             </div>
             <a
-              :href="invoice.payment_url"
+              v-if="paymentUrl"
+              :href="paymentUrl"
               target="_blank"
               rel="noopener noreferrer"
               class="btn-secondary btn-sm"
@@ -374,7 +391,7 @@ onMounted(() => void load())
         <!-- Payment address -->
         <section class="card flex flex-col items-center gap-4 self-start p-5">
           <h2 class="self-start text-sm font-semibold">Deposit address</h2>
-          <QrCode :value="invoice.qr_payload" :size="164" label="Deposit address QR code" />
+          <QrCode :value="qrValue" :size="164" label="Deposit address QR code" />
           <div class="w-full">
             <div class="flex items-center gap-2 rounded-xl border border-border bg-bg/60 px-3 py-2.5">
               <code class="mono min-w-0 flex-1 break-all text-[12px]">{{ invoice.address }}</code>

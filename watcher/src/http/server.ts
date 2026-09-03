@@ -7,6 +7,15 @@ import type { ScannerManager } from '../scanner/manager.js';
 import { RescanError } from '../scanner/manager.js';
 import type { StateStore } from '../state/store.js';
 import { isNetworkCode, type NetworkCode } from '../types.js';
+import { redactSecrets } from '../redact.js';
+
+/** Максимум адресов за один /addresses/derive-batch. */
+const MAX_DERIVE_BATCH = 100;
+/**
+ * Тела запросов здесь — три коротких JSON-объекта. 32 КБ с запасом хватает и
+ * не даёт превратить внутренний порт в мусорную корзину.
+ */
+const BODY_LIMIT_BYTES = 32 * 1024;
 
 export interface ServerDeps {
   cfg: AppConfig;
@@ -60,8 +69,10 @@ export function buildServer(deps: ServerDeps) {
   const app = Fastify({
     loggerInstance: log,
     logController: new QuietLogController(),
-    bodyLimit: 1_048_576,
-    trustProxy: true,
+    bodyLimit: BODY_LIMIT_BYTES,
+    // Сервис слушает только внутреннюю docker-сеть и не принимает решений по
+    // IP клиента; доверять X-Forwarded-* незачем.
+    trustProxy: false,
   });
 
   const requireAuth = async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
@@ -86,7 +97,13 @@ export function buildServer(deps: ServerDeps) {
 
   // --- GET /health (без auth, SPEC §6.6) ---
   app.get('/health', async () => {
-    const networks = deps.manager?.healthSnapshot() ?? [];
+    // Отдаётся БЕЗ авторизации (SPEC §6.6): ни xpub, ни RPC-url, ни токен сюда
+    // попасть не должны. Булевы флаги derivation.* — максимум, что раскрываем.
+    // lastError маскируется дважды: в ScannerHealthState.fail и здесь.
+    const networks = (deps.manager?.healthSnapshot() ?? []).map((n) => ({
+      ...n,
+      lastError: n.lastError === null ? null : redactSecrets(n.lastError).slice(0, 500),
+    }));
     return {
       ok: true,
       watcherEnabled: cfg.watcherEnabled,
@@ -138,9 +155,9 @@ export function buildServer(deps: ServerDeps) {
       });
     }
     const count = parseIndex(body.count);
-    if (count === null || count < 1 || count > 1000) {
+    if (count === null || count < 1 || count > MAX_DERIVE_BATCH) {
       return fail(reply, 422, 'validation_error', 'Invalid payload.', {
-        count: ['count must be an integer between 1 and 1000'],
+        count: [`count must be an integer between 1 and ${MAX_DERIVE_BATCH}`],
       });
     }
 
@@ -153,7 +170,7 @@ export function buildServer(deps: ServerDeps) {
 
   // --- POST /rescan ---
   app.post('/rescan', { preHandler: requireAuth }, async (req, reply) => {
-    const body = (req.body ?? {}) as { network?: unknown; from_block?: unknown };
+    const body = (req.body ?? {}) as { network?: unknown; from_block?: unknown; force?: unknown };
 
     const network = parseNetwork(body.network);
     if (!network) {
@@ -168,20 +185,24 @@ export function buildServer(deps: ServerDeps) {
       });
     }
 
+    const force = body.force === true || body.force === 'true';
+
     if (!cfg.watcherEnabled || !deps.manager) {
       return fail(reply, 409, 'invalid_state', 'Scanning is disabled (WATCHER_ENABLED=false).');
     }
 
     try {
-      deps.manager.rescan(network, fromBlock);
+      deps.manager.rescan(network, fromBlock, force);
     } catch (err) {
       if (err instanceof RescanError) {
-        return fail(reply, 409, 'invalid_state', err.message);
+        return err.status === 422
+          ? fail(reply, 422, 'validation_error', err.message)
+          : fail(reply, 409, 'invalid_state', err.message);
       }
       throw err;
     }
 
-    return { ok: true, network, from_block: fromBlock };
+    return { ok: true, network, from_block: fromBlock, force };
   });
 
   function derivationError(reply: FastifyReply, err: unknown): FastifyReply {

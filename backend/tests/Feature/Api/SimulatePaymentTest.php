@@ -7,6 +7,7 @@ use App\Models\Invoice;
 use App\Models\LedgerEntry;
 use App\Models\Merchant;
 use App\Models\Transaction;
+use App\Services\PaymentSimulator;
 use App\Support\Money;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -51,7 +52,10 @@ class SimulatePaymentTest extends TestCase
 
         $payload = $response->json('payload');
 
-        $this->assertStringStartsWith('0xsim', $payload['tx_hash']);
+        // The hash is a real tron-shaped hash (the ingest endpoint enforces
+        // the format) carrying the simulator's marker.
+        $this->assertStringStartsWith(PaymentSimulator::MARKER, $payload['tx_hash']);
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $payload['tx_hash']);
         $this->assertSame($invoice->depositAddress->address, $payload['to_address']);
         $this->assertSame('confirmed', $payload['status']);
         // confirmations must clear the network requirement (19 for tron).

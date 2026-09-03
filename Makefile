@@ -1,7 +1,11 @@
-.PHONY: up down build logs keys ps restart shell test
+.PHONY: up down build logs keys ps restart shell test check-env
+
+check-env: ## проверить .env на плейсхолдеры (в APP_ENV != local падает)
+	@./scripts/check-env.sh .env
 
 up: ## build & start everything
 	@[ -f .env ] || cp .env.example .env
+	@./scripts/check-env.sh .env
 	@grep -qE '^APP_KEY=.+' .env || { \
 		echo "Generating APP_KEY..."; \
 		docker compose build app >/dev/null; \

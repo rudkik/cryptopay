@@ -42,7 +42,15 @@ class DemoMerchantSeeder extends Seeder
 
             if (! $existing) {
                 $apiKeys->generate($merchant, 'Demo key', $plaintext);
-                $this->command?->info("Demo API key: {$plaintext}");
+
+                // Outside local/testing this is a randomly generated, fully
+                // working credential; printing it would write it to the
+                // container log on every boot.
+                if (app()->environment(['local', 'testing'])) {
+                    $this->command?->info("Demo API key: {$plaintext}");
+                } else {
+                    $this->command?->info('Demo API key created; issue a fresh one from the admin panel to see it.');
+                }
             }
         }
 

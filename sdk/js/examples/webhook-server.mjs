@@ -9,13 +9,31 @@
 import { createServer } from 'node:http'
 import { SignatureError, verifyWebhook } from '../dist/index.js'
 
-const secret = process.env.CRYPTOPAY_WEBHOOK_SECRET ?? 'whsec_dev_secret'
+// Никакого значения по умолчанию: пустой секрет означал бы, что подпись
+// подделает кто угодно, а захардкоженный дефолт рано или поздно уедет в прод.
+const secret = process.env.CRYPTOPAY_WEBHOOK_SECRET
+if (!secret) {
+  console.error('Set CRYPTOPAY_WEBHOOK_SECRET before starting this server.')
+  process.exit(1)
+}
 const port = Number(process.env.PORT ?? 3000)
+
+/** Тело вебхука — небольшой JSON; всё сверх лимита обрывается, а не буферизуется. */
+const MAX_BODY_BYTES = 1024 * 1024
 
 function readRawBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = []
-    req.on('data', (chunk) => chunks.push(chunk))
+    let received = 0
+    req.on('data', (chunk) => {
+      received += chunk.length
+      if (received > MAX_BODY_BYTES) {
+        reject(new Error('request body too large'))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
     req.on('end', () => resolve(Buffer.concat(chunks)))
     req.on('error', reject)
   })
@@ -43,7 +61,12 @@ const server = createServer(async (req, res) => {
     if (err instanceof SignatureError) {
       console.error('[webhook] signature verification failed:', err.message)
       res.writeHead(400, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: { code: 'invalid_signature', message: err.message, details: {} } }))
+      // Причина — в лог, наружу общий текст.
+      res.end(
+        JSON.stringify({
+          error: { code: 'invalid_signature', message: 'Invalid webhook signature.', details: {} },
+        }),
+      )
       return
     }
     throw err

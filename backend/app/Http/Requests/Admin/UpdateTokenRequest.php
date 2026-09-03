@@ -18,7 +18,7 @@ class UpdateTokenRequest extends FormRequest
             'min_purchase' => ['sometimes', 'nullable', 'regex:/^\d{1,18}(\.\d{1,18})?$/'],
             'max_purchase' => ['sometimes', 'nullable', 'regex:/^\d{1,18}(\.\d{1,18})?$/'],
             'is_active' => ['sometimes', 'boolean'],
-            'image_url' => ['sometimes', 'nullable', 'url', 'max:2000'],
+            'image_url' => ['sometimes', 'nullable', 'url:http,https', 'max:2000'],
         ];
     }
 }

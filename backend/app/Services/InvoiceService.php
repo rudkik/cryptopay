@@ -113,7 +113,14 @@ class InvoiceService
      */
     public function recalculate(Invoice $invoice, bool $expiring = false): Invoice
     {
+        // Only transactions in the invoice's own currency pay it. A USDC
+        // transfer to a USDT invoice's deposit address is still recorded and
+        // still credited to the merchant's USDC balance (see
+        // TransactionIngestService::credit()), but it must never settle a USDT
+        // invoice — the two are not interchangeable just because they are both
+        // "about a dollar".
         $totals = $invoice->transactions()
+            ->where('currency', $invoice->currency)
             ->selectRaw('status, count(*) as cnt, sum(amount) as total')
             ->groupBy('status')
             ->get()

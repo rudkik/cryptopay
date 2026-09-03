@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import path from 'node:path';
+import { registerSecret } from './redact.js';
 
 function str(name: string, fallback = ''): string {
   const v = process.env[name];
@@ -19,7 +20,26 @@ function bool(name: string, fallback: boolean): boolean {
   return !['false', '0', 'no', 'off'].includes(raw.trim().toLowerCase());
 }
 
+/**
+ * Значения INTERNAL_API_TOKEN, с которыми запускаться в проде запрещено.
+ * Сравнение по префиксу: в репозитории плейсхолдер встречается в двух вариантах
+ * (`change-me-internal-token` и `change-me-internal-token-please`).
+ */
+const PLACEHOLDER_TOKEN_PREFIX = 'change-me';
+
+/** Окружения, в которых допустимы дефолтные секреты. */
+const DEV_ENVS = new Set(['local', 'dev', 'development', 'test', 'testing']);
+
 export interface AppConfig {
+  /**
+   * Окружение развёртывания. Берётся из APP_ENV (единый .env compose), с
+   * откатом на NODE_ENV. Именно APP_ENV, а не NODE_ENV: NODE_ENV=production
+   * зашит в Dockerfile ради `npm ci --omit=dev` и потому НЕ является признаком
+   * боевого стенда.
+   */
+  appEnv: string;
+  /** true => дефолтные/пустые секреты фатальны. */
+  strictSecrets: boolean;
   port: number;
   host: string;
   backendUrl: string;
@@ -51,8 +71,17 @@ export interface AppConfig {
 
 export function loadConfig(): AppConfig {
   const dataDir = path.resolve(str('DATA_DIR', './data'));
+  const appEnv = str('APP_ENV', str('NODE_ENV', 'production')).trim().toLowerCase();
+
+  // Всё, что не должно всплыть в логах и в /health.
+  registerSecret(str('INTERNAL_API_TOKEN'));
+  registerSecret(str('TRON_API_KEY'));
+  registerSecret(str('EVM_XPUB'));
+  registerSecret(str('TRON_XPUB'));
 
   return {
+    appEnv,
+    strictSecrets: !DEV_ENVS.has(appEnv),
     port: int('PORT', 3100),
     host: str('HOST', '0.0.0.0'),
     backendUrl: str('BACKEND_URL', 'http://nginx').replace(/\/+$/, ''),
@@ -78,6 +107,12 @@ export function loadConfig(): AppConfig {
     backendRetries: int('BACKEND_RETRIES', 5),
     requestTimeoutMs: int('REQUEST_TIMEOUT_MS', 30_000),
   };
+}
+
+/** Токен пустой или остался плейсхолдером из .env.example. */
+export function isPlaceholderToken(token: string): boolean {
+  const t = token.trim().toLowerCase();
+  return t === '' || t.startsWith(PLACEHOLDER_TOKEN_PREFIX);
 }
 
 export function rpcUrlFor(cfg: AppConfig, network: string): string {

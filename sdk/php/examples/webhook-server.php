@@ -56,11 +56,14 @@ header('Content-Type: application/json');
 try {
     $event = Webhook::verify($rawBody, $headers, $secret);
 } catch (SignatureException $e) {
+    // The precise reason goes to the log, never to the caller: telling an
+    // unauthenticated client whether it got the timestamp or the signature
+    // wrong only helps someone probing the endpoint.
     http_response_code(400);
     echo json_encode([
         'error' => [
             'code' => 'invalid_signature',
-            'message' => $e->getMessage(),
+            'message' => 'Invalid webhook signature.',
         ],
     ]);
 

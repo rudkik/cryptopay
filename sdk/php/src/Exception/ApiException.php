@@ -23,8 +23,21 @@ class ApiException extends CryptoPayException
         private readonly string $errorCode,
         private readonly int $httpStatus,
         private readonly array $details = [],
+        private readonly ?int $retryAfter = null,
     ) {
         parent::__construct($message, $httpStatus);
+    }
+
+    /**
+     * Seconds to wait before retrying, from the response's `Retry-After` header
+     * (429 and 503 responses). `null` when the server did not say.
+     *
+     * The SDK never retries on its own — back-off is the caller's decision, so
+     * there is no hidden retry loop that could hammer a rate-limited API.
+     */
+    public function getRetryAfter(): ?int
+    {
+        return $this->retryAfter;
     }
 
     public function getErrorCode(): string

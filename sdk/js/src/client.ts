@@ -19,6 +19,8 @@ import type {
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const USER_AGENT = 'cryptopay-node-sdk/1.0'
+/** Потолок на тело ответа. API возвращает небольшой JSON; всё сверх — аномалия. */
+const MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 
 export interface CryptoPayOptions {
   /** Секретный API-ключ мерчанта, например `cp_live_...`. */
@@ -37,11 +39,86 @@ export interface CryptoPayOptions {
 
 type QueryValue = string | number | boolean | undefined | null
 
+function isLocalHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  return (
+    host === 'localhost' ||
+    host === '::1' ||
+    host === 'host.docker.internal' ||
+    host.startsWith('127.') ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.endsWith('.test')
+  )
+}
+
 function normalizeBaseUrl(rawBaseUrl: string): string {
   let url = rawBaseUrl.trim()
   url = url.replace(/\/+$/, '')
   url = url.replace(/\/api\/v1$/, '')
+
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new TypeError(`CryptoPay: baseUrl is not a valid URL: ${url}`)
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new TypeError(`CryptoPay: baseUrl must be an http:// or https:// URL, got ${parsed.protocol}`)
+  }
+  // Простой http легитимен для локального стенда (docker-compose поднимает API на
+  // http://localhost:8095); где угодно ещё это API-ключ открытым текстом.
+  // Предупреждаем, но не падаем — иначе сломаем локальную разработку.
+  if (parsed.protocol === 'http:' && !isLocalHost(parsed.hostname)) {
+    console.warn(
+      'CryptoPay: baseUrl uses plain http against a non-local host — the API key is sent unencrypted. Use https://.',
+    )
+  }
+
   return url
+}
+
+/**
+ * Читает тело ответа с жёстким лимитом, чтобы враждебный или сломанный эндпоинт
+ * не смог вычерпать память процесса бесконечным потоком.
+ */
+async function readBoundedText(response: Response, max = MAX_RESPONSE_BYTES): Promise<string> {
+  const declared = Number(response.headers?.get?.('content-length'))
+  if (Number.isFinite(declared) && declared > max) {
+    throw new CryptoPayError(`CryptoPay: response body exceeds ${max} bytes`)
+  }
+
+  const body = response.body as ReadableStream<Uint8Array> | null | undefined
+  if (!body || typeof body.getReader !== 'function') {
+    const text = await response.text()
+    if (Buffer.byteLength(text, 'utf8') > max) {
+      throw new CryptoPayError(`CryptoPay: response body exceeds ${max} bytes`)
+    }
+    return text
+  }
+
+  const reader = body.getReader()
+  const chunks: Uint8Array[] = []
+  let received = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value) continue
+    received += value.byteLength
+    if (received > max) {
+      await reader.cancel()
+      throw new CryptoPayError(`CryptoPay: response body exceeds ${max} bytes`)
+    }
+    chunks.push(value)
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString('utf8')
+}
+
+/** `Retry-After` в секундах, когда сервер прислал простое числовое значение. */
+function parseRetryAfter(response: Response): number | null {
+  const raw = response.headers?.get?.('retry-after')
+  if (typeof raw !== 'string' || !/^\d{1,9}$/.test(raw.trim())) return null
+  return Number(raw.trim())
 }
 
 function buildQuery(filters?: object): string {
@@ -136,6 +213,9 @@ export class CryptoPay {
         headers,
         body: hasBody ? JSON.stringify(options?.body) : undefined,
         signal: AbortSignal.timeout(this.timeout),
+        // Merchant API никогда не редиректит. Следовать 3xx означало бы унести
+        // заголовок Authorization на адрес, который выбрали не мы.
+        redirect: 'manual',
       })
     } catch (err) {
       if (err instanceof Error && err.name === 'TimeoutError') {
@@ -149,6 +229,12 @@ export class CryptoPay {
       })
     }
 
+    if (response.status >= 300 && response.status < 400) {
+      throw new CryptoPayError(
+        `CryptoPay: unexpected redirect (HTTP ${response.status}) from ${this.baseUrl} — check baseUrl`,
+      )
+    }
+
     if (!response.ok) {
       await this.throwApiError(response)
     }
@@ -157,7 +243,7 @@ export class CryptoPay {
       return undefined as T
     }
 
-    const text = await response.text()
+    const text = await readBoundedText(response)
     if (!text) {
       return undefined as T
     }
@@ -165,7 +251,8 @@ export class CryptoPay {
   }
 
   private async throwApiError(response: Response): Promise<never> {
-    const raw = await response.text()
+    const raw = await readBoundedText(response)
+    const retryAfter = parseRetryAfter(response)
     let parsed: unknown
     try {
       parsed = raw ? JSON.parse(raw) : undefined
@@ -185,6 +272,7 @@ export class CryptoPay {
         code: typeof err.code === 'string' ? err.code : 'http_error',
         details: (err.details && typeof err.details === 'object' ? err.details : {}) as Record<string, unknown>,
         status: response.status,
+        retryAfter,
       })
     }
 
@@ -192,6 +280,7 @@ export class CryptoPay {
       code: response.status >= 500 ? 'server_error' : 'http_error',
       details: { body: raw.slice(0, 2048) },
       status: response.status,
+      retryAfter,
     })
   }
 

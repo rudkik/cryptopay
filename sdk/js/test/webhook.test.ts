@@ -172,6 +172,116 @@ describe('verifyWebhook', () => {
     expect(() => verifyWebhook(body, headersFor(timestamp, signature), SECRET)).toThrow(SignatureError)
   })
 
+  /* ----------------------------------------------------------------------
+   * Hardening cases: each of these was a way to get a forged delivery accepted
+   * (or a check silently skipped) before the signature verification was
+   * tightened. They are the regression net for that.
+   * -------------------------------------------------------------------- */
+
+  it('rejects an empty secret instead of validating HMAC with an empty key', () => {
+    const body = JSON.stringify(makePayload())
+    const timestamp = Math.floor(Date.now() / 1000)
+    // An attacker can compute this: the "secret" is public knowledge.
+    const forged = sign('', timestamp, body)
+
+    expect(() => verifyWebhook(body, headersFor(timestamp, forged), '')).toThrow(SignatureError)
+    expect(() => verifyWebhook(body, headersFor(timestamp, forged), '')).toThrow(/not configured/)
+  })
+
+  it('rejects a timestamp far in the FUTURE, not just a stale one', () => {
+    const body = JSON.stringify(makePayload())
+    const future = Math.floor(Date.now() / 1000) + 3600
+    const signature = sign(SECRET, future, body)
+
+    expect(() => verifyWebhook(body, headersFor(future, signature), SECRET)).toThrow(
+      /outside of the allowed tolerance/,
+    )
+  })
+
+  it('accepts a timestamp inside the window on both sides of now', () => {
+    const now = Math.floor(Date.now() / 1000)
+    for (const timestamp of [now - 120, now + 120]) {
+      const body = JSON.stringify(makePayload())
+      expect(() =>
+        verifyWebhook(body, headersFor(timestamp, sign(SECRET, timestamp, body)), SECRET),
+      ).not.toThrow()
+    }
+  })
+
+  it.each([
+    ['no scheme prefix', 'a'.repeat(64)],
+    ['wrong algorithm prefix', `sha1=${'a'.repeat(64)}`],
+    ['too short', 'sha256=abc'],
+    ['non-hex characters', `sha256=${'z'.repeat(64)}`],
+    ['empty after prefix', 'sha256='],
+  ])('rejects a malformed signature header (%s)', (_label, signature) => {
+    const body = JSON.stringify(makePayload())
+    const timestamp = Math.floor(Date.now() / 1000)
+
+    expect(() => verifyWebhook(body, headersFor(timestamp, signature), SECRET)).toThrow(SignatureError)
+  })
+
+  it('accepts an upper-case hex signature (hex is case-insensitive on the wire)', () => {
+    const body = JSON.stringify(makePayload())
+    const timestamp = Math.floor(Date.now() / 1000)
+    const signature = sign(SECRET, timestamp, body).toUpperCase()
+
+    expect(() => verifyWebhook(body, headersFor(timestamp, signature), SECRET)).not.toThrow()
+  })
+
+  it.each([
+    ['float', '1893456000.5'],
+    ['exponent', '1e9'],
+    ['leading space', ' 1893456000'],
+    ['negative', '-1893456000'],
+  ])('rejects a non-integer timestamp header (%s)', (_label, timestamp) => {
+    const body = JSON.stringify(makePayload())
+
+    expect(() =>
+      verifyWebhook(body, headersFor(timestamp, sign(SECRET, timestamp, body)), SECRET, {
+        tolerance: 0,
+      }),
+    ).toThrow(SignatureError)
+  })
+
+  it('verifies the signature BEFORE parsing the body: a non-JSON body with a bad signature fails on the signature', () => {
+    const timestamp = Math.floor(Date.now() / 1000)
+    const badSignature = `sha256=${'0'.repeat(64)}`
+
+    expect(() => verifyWebhook('not json at all', headersFor(timestamp, badSignature), SECRET)).toThrow(
+      /signature mismatch/,
+    )
+  })
+
+  it('uses the raw body verbatim — re-encoded JSON with the same data does NOT verify', () => {
+    const payload = makePayload()
+    const rawBody = JSON.stringify(payload)
+    const timestamp = Math.floor(Date.now() / 1000)
+    const signature = sign(SECRET, timestamp, rawBody)
+    // Same object, different byte sequence (pretty-printed).
+    const reEncoded = JSON.stringify(JSON.parse(rawBody), null, 2)
+
+    expect(reEncoded).not.toBe(rawBody)
+    expect(() => verifyWebhook(reEncoded, headersFor(timestamp, signature), SECRET)).toThrow(
+      /signature mismatch/,
+    )
+  })
+
+  it('never puts the secret into the error message', () => {
+    const body = JSON.stringify(makePayload())
+    const timestamp = Math.floor(Date.now() / 1000)
+    const signature = sign('other-secret', timestamp, body)
+
+    try {
+      verifyWebhook(body, headersFor(timestamp, signature), SECRET)
+      expect.unreachable('should have thrown')
+    } catch (err) {
+      expect(err).toBeInstanceOf(SignatureError)
+      expect(String(err)).not.toContain(SECRET)
+      expect((err as Error).stack ?? '').not.toContain(SECRET)
+    }
+  })
+
   it('accepts a Buffer rawBody identically to the equivalent string', () => {
     const payload = makePayload()
     const body = JSON.stringify(payload)

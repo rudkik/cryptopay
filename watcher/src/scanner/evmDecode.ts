@@ -34,46 +34,89 @@ export function addressToTopic(address: string): string {
   return zeroPadValue(getAddress(address), 32).toLowerCase();
 }
 
-function topicToAddress(topic: string): string {
-  return getAddress(`0x${topic.slice(-40)}`);
+/** topic (32 байта) -> адрес. null, если topic не является каноничным адресом. */
+function topicToAddress(topic: unknown): string | null {
+  if (typeof topic !== 'string') return null;
+  // Каноничный адресный topic: 12 нулевых байт + 20 байт адреса.
+  if (!/^0x0{24}[0-9a-fA-F]{40}$/.test(topic)) return null;
+  try {
+    return getAddress(`0x${topic.slice(-40)}`);
+  } catch {
+    return null;
+  }
+}
+
+/** 32-байтное слово uint256 в data. */
+const UINT256_DATA = /^0x[0-9a-fA-F]{64}$/;
+const HASH32 = /^0x[0-9a-fA-F]{64}$/;
+
+function isHash32(value: unknown): value is string {
+  return typeof value === 'string' && HASH32.test(value);
 }
 
 /**
- * Разбор лога Transfer. Возвращает null, если лог не является валидным
- * 3-топиковым Transfer (например, это Approval или лог удалён реоргом).
+ * Разбор лога Transfer(address,address,uint256).
+ *
+ * Возвращает null для всего, что не является каноничным ERC-20 Transfer:
+ *  - `removed: true` (лог вычищен реоргом);
+ *  - topics != ровно 3 (ERC-721 Transfer индексирует tokenId и даёт 4 topic'а —
+ *    такой лог НЕ является переводом токена и должен игнорироваться);
+ *  - topic0 != Transfer;
+ *  - неканоничные адресные topic'и (мусор в старших 12 байтах);
+ *  - `data` не ровно 32 байта (битый/нестандартный лог — пропускаем безопасно,
+ *    иначе BigInt() съел бы произвольно длинное число);
+ *  - отсутствующие/битые хеши блока и транзакции.
+ *
+ * ВАЖНО: адрес контракта здесь только нормализуется; сверка со списком
+ * сконфигурированных контрактов — на вызывающей стороне (регистронезависимо).
  */
 export function parseTransferLog(log: RawLog): TransferEvent | null {
-  if (log.removed) return null;
-  if (!Array.isArray(log.topics) && !(log.topics as readonly string[])?.length) return null;
-  const topics = log.topics as readonly string[];
-  if (topics.length < 3) return null;
+  if (!log || typeof log !== 'object') return null;
+  if (log.removed === true) return null;
+
+  const topics = log.topics;
+  if (!Array.isArray(topics) || topics.length !== 3) return null;
+
   const topic0 = topics[0];
-  if (!topic0 || topic0.toLowerCase() !== TRANSFER_TOPIC) return null;
+  if (typeof topic0 !== 'string' || topic0.toLowerCase() !== TRANSFER_TOPIC) return null;
 
-  const fromTopic = topics[1];
-  const toTopic = topics[2];
-  if (!fromTopic || !toTopic) return null;
+  const from = topicToAddress(topics[1]);
+  const to = topicToAddress(topics[2]);
+  if (from === null || to === null) return null;
 
-  const data = log.data && log.data !== '0x' ? log.data : '0x0';
+  if (typeof log.data !== 'string' || !UINT256_DATA.test(log.data)) return null;
   let valueRaw: bigint;
   try {
-    valueRaw = BigInt(data);
+    valueRaw = BigInt(log.data);
   } catch {
     return null;
   }
 
-  const logIndex = log.index ?? log.logIndex;
-  if (logIndex === undefined) return null;
+  if (!isHash32(log.blockHash) || !isHash32(log.transactionHash)) return null;
+
+  const blockNumber = Number(log.blockNumber);
+  if (!Number.isInteger(blockNumber) || blockNumber < 0) return null;
+
+  const rawLogIndex = log.index ?? log.logIndex;
+  const logIndex = Number(rawLogIndex);
+  if (rawLogIndex === undefined || !Number.isInteger(logIndex) || logIndex < 0) return null;
+
+  let contract: string;
+  try {
+    contract = getAddress(log.address);
+  } catch {
+    return null;
+  }
 
   return {
-    contract: getAddress(log.address),
-    from: topicToAddress(fromTopic),
-    to: topicToAddress(toTopic),
+    contract,
+    from,
+    to,
     valueRaw,
-    blockNumber: Number(log.blockNumber),
+    blockNumber,
     blockHash: log.blockHash,
     txHash: log.transactionHash,
-    logIndex: Number(logIndex),
+    logIndex,
   };
 }
 

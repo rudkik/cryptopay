@@ -42,7 +42,7 @@ class MerchantApiTest extends TestCase
         $invoice = Invoice::with('depositAddress')->findOrFail($id);
 
         $this->withHeaders($this->internalHeaders())->postJson('/api/internal/transactions', [
-            'network' => 'tron', 'tx_hash' => 'tx-bal', 'log_index' => 0, 'symbol' => 'USDT',
+            'network' => 'tron', 'tx_hash' => $this->txHash('bal'), 'log_index' => 0, 'symbol' => 'USDT',
             'to_address' => $invoice->depositAddress->address, 'amount' => '10',
             'amount_raw' => '10000000', 'confirmations' => 19, 'status' => 'confirmed',
         ])->assertOk();
@@ -66,7 +66,7 @@ class MerchantApiTest extends TestCase
         $invoice = Invoice::with('depositAddress')->findOrFail($id);
 
         $this->withHeaders($this->internalHeaders())->postJson('/api/internal/transactions', [
-            'network' => 'tron', 'tx_hash' => 'tx-scope', 'log_index' => 0, 'symbol' => 'USDT',
+            'network' => 'tron', 'tx_hash' => $this->txHash('scope'), 'log_index' => 0, 'symbol' => 'USDT',
             'to_address' => $invoice->depositAddress->address, 'amount' => '10',
             'amount_raw' => '10000000', 'confirmations' => 3, 'status' => 'detected',
         ])->assertOk();
@@ -75,11 +75,11 @@ class MerchantApiTest extends TestCase
             ->getJson("/api/v1/transactions?invoice_id={$id}")
             ->assertOk()
             ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.tx_hash', 'tx-scope')
+            ->assertJsonPath('data.0.tx_hash', $this->txHash('scope'))
             ->assertJsonPath('data.0.confirmations', 3)
             ->assertJsonPath('data.0.confirmations_required', 19)
             ->assertJsonPath('data.0.status', 'detected')
-            ->assertJsonPath('data.0.explorer_url', 'https://tronscan.org/#/transaction/tx-scope');
+            ->assertJsonPath('data.0.explorer_url', 'https://tronscan.org/#/transaction/'.$this->txHash('scope'));
 
         [, $otherKey] = $this->makeMerchant();
 

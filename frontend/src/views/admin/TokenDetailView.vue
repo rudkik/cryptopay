@@ -21,6 +21,7 @@ import type { PaginationMeta, Token, TokenHolding, TokenPurchase } from '@/api/t
 import { fieldErrors, reportError } from '@/composables/useErrorHandler'
 import { formatDateTime, percentOf, truncateMiddle } from '@/utils/format'
 import { toast } from '@/utils/toast'
+import { safeImageUrl } from '@/utils/url'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
@@ -35,6 +36,9 @@ const tabs = computed<TabItem[]>(() => [
   { key: 'purchases', label: 'Purchases', count: purchasesMeta.value.total },
   { key: 'holdings', label: 'Holdings', count: holdings.value.length },
 ])
+
+/** Token art is an operator-supplied remote URL — only plain http(s) is rendered. */
+const imageUrl = computed(() => safeImageUrl(token.value?.image_url))
 
 const soldPercent = computed(() =>
   token.value?.total_supply ? percentOf(token.value.sold, token.value.total_supply) : 0,
@@ -226,10 +230,11 @@ onMounted(async () => {
         <section class="card p-5">
           <div class="flex items-center gap-3">
             <img
-              v-if="token.image_url"
-              :src="token.image_url"
+              v-if="imageUrl"
+              :src="imageUrl"
               alt=""
               class="h-12 w-12 rounded-full border border-border object-cover"
+              referrerpolicy="no-referrer"
             />
             <span
               v-else

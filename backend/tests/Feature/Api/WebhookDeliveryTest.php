@@ -41,7 +41,7 @@ class WebhookDeliveryTest extends TestCase
 
         $this->withHeaders($this->internalHeaders())->postJson('/api/internal/transactions', [
             'network' => 'tron',
-            'tx_hash' => 'tx-webhook-test',
+            'tx_hash' => $this->txHash('webhook-test'),
             'log_index' => 0,
             'symbol' => 'USDT',
             'to_address' => $invoice->depositAddress->address,

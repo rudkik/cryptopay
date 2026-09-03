@@ -313,3 +313,99 @@ describe('transactions()', () => {
     expect(result.meta.total).toBe(0)
   })
 })
+
+
+/* --------------------------------------------------------------------------
+ * Transport hardening. These cover the ways an API call could leak the key,
+ * be walked off to another host, or be used to exhaust the process.
+ * ----------------------------------------------------------------------- */
+
+describe('transport hardening', () => {
+  it('sends the API key ONLY in the Authorization header, never in the URL', async () => {
+    const { c, calls } = client(() => jsonResponse(invoicePayload()))
+    await c.listInvoices({ status: 'pending' })
+
+    expect(calls[0]!.url).not.toContain('cp_live_test')
+    expect((calls[0]!.init.headers as Record<string, string>).Authorization).toBe('Bearer cp_live_test')
+  })
+
+  it('does not follow redirects — a 3xx is surfaced, not chased with the Authorization header', async () => {
+    const { c, calls } = client(
+      () => new Response(null, { status: 302, headers: { Location: 'https://evil.example/steal' } }),
+    )
+
+    await expect(c.getInvoice('abc')).rejects.toThrow(/unexpected redirect/)
+    expect(calls[0]!.init.redirect).toBe('manual')
+  })
+
+  it('surfaces 429 with retryAfter from the Retry-After header and performs no retry', async () => {
+    let attempts = 0
+    const { c } = client(() => {
+      attempts += 1
+      return new Response(
+        JSON.stringify({ error: { code: 'rate_limited', message: 'Too many requests', details: {} } }),
+        { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': '30' } },
+      )
+    })
+
+    const err = await c.listInvoices().catch((e) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).isRateLimited).toBe(true)
+    expect((err as ApiError).retryAfter).toBe(30)
+    expect(attempts).toBe(1) // no hidden retry loop
+  })
+
+  it('retryAfter is null when the header is absent or not a plain number', async () => {
+    const { c } = client(
+      () =>
+        new Response(JSON.stringify({ error: { code: 'rate_limited', message: 'slow down', details: {} } }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json', 'Retry-After': 'Wed, 21 Oct 2026 07:28:00 GMT' },
+        }),
+    )
+
+    const err = (await c.listInvoices().catch((e) => e)) as ApiError
+    expect(err.retryAfter).toBeNull()
+  })
+
+  it('rejects an oversized response instead of buffering it', async () => {
+    const { c } = client(
+      () =>
+        new Response('{}', {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Content-Length': String(64 * 1024 * 1024) },
+        }),
+    )
+
+    await expect(c.listInvoices()).rejects.toThrow(/exceeds/)
+  })
+
+  it('rejects a baseUrl that is not http(s)', () => {
+    expect(() => new CryptoPay({ apiKey: 'k', baseUrl: 'file:///etc/passwd' })).toThrow(TypeError)
+    expect(() => new CryptoPay({ apiKey: 'k', baseUrl: 'not a url' })).toThrow(TypeError)
+  })
+
+  it('warns (but does not fail) on plain http against a non-local host, and stays quiet for localhost', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    new CryptoPay({ apiKey: 'k', baseUrl: 'http://pay.example.com', fetch: globalThis.fetch })
+    expect(warn).toHaveBeenCalledOnce()
+
+    warn.mockClear()
+    new CryptoPay({ apiKey: 'k', baseUrl: 'http://localhost:8095', fetch: globalThis.fetch })
+    new CryptoPay({ apiKey: 'k', baseUrl: 'http://127.0.0.1:8095', fetch: globalThis.fetch })
+    new CryptoPay({ apiKey: 'k', baseUrl: 'https://pay.example.com', fetch: globalThis.fetch })
+    expect(warn).not.toHaveBeenCalled()
+
+    warn.mockRestore()
+  })
+
+  it('never includes the API key in an ApiError message, string form or details', async () => {
+    const { c } = client(() => errorResponse('unauthenticated', 'Unauthenticated.', {}, 401))
+
+    const err = (await c.listInvoices().catch((e) => e)) as ApiError
+    expect(String(err)).not.toContain('cp_live_test')
+    expect(JSON.stringify(err.details)).not.toContain('cp_live_test')
+    expect(err.stack ?? '').not.toContain('cp_live_test')
+  })
+})

@@ -45,7 +45,16 @@ if [ -z "${APP_KEY:-}" ]; then
     log "WARNING: APP_KEY was empty; generated an ephemeral key for this container."
     log "WARNING: Set APP_KEY in your .env to keep sessions and encrypted values"
     log "WARNING: valid across restarts and consistent between containers."
-    log "WARNING: APP_KEY=${APP_KEY}"
+
+    # The key itself is only echoed in local development. Container logs are
+    # routinely shipped to a log aggregator, and APP_KEY decrypts every
+    # encrypted value and signs every cookie.
+    if [ "${APP_ENV:-production}" = "local" ]; then
+        log "WARNING: APP_KEY=${APP_KEY}"
+    else
+        log "WARNING: the generated key is not printed outside APP_ENV=local."
+        log "WARNING: run 'php artisan key:generate --show' yourself and set it in .env."
+    fi
 fi
 
 # ---------------------------------------------------------------------------

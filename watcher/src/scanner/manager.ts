@@ -12,7 +12,24 @@ import { TronClient } from './tronClient.js';
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-export class RescanError extends Error {}
+export class RescanError extends Error {
+  constructor(
+    message: string,
+    /** HTTP-статус, которым отвечает /rescan. */
+    public readonly status: 409 | 422 = 409,
+  ) {
+    super(message);
+    this.name = 'RescanError';
+  }
+}
+
+/**
+ * Насколько глубоко назад разрешено гонять /rescan без `force`.
+ * 50 000 блоков — это ~7 суток BSC и ~2 недели Tron: с запасом перекрывает любой
+ * реорг, но не даёт одним запросом заставить watcher перечитать полсети
+ * (десятки тысяч RPC-вызовов = self-DoS и слив лимитов провайдера).
+ */
+export const MAX_RESCAN_DEPTH_BLOCKS = 50_000;
 
 interface Runtime {
   scanner: Scanner;
@@ -169,6 +186,12 @@ export class ScannerManager {
       try {
         const addresses = await this.backend.getWatchAddresses(code);
         set.replace(addresses);
+        if (set.rejectedCount > 0) {
+          this.log.warn(
+            { network: code, rejected: set.rejectedCount, accepted: set.size },
+            'backend returned watch addresses that failed validation, they are not being scanned',
+          );
+        }
       } catch (err) {
         this.log.warn({ network: code, err: (err as Error).message }, 'watch-addresses refresh failed');
       }
@@ -260,11 +283,25 @@ export class ScannerManager {
     return [...known.values()];
   }
 
-  rescan(network: NetworkCode, fromBlock: number): void {
+  rescan(network: NetworkCode, fromBlock: number, force = false): void {
     const runtime = this.runtimes.get(network);
     if (!runtime) {
-      throw new RescanError(`no active scanner for network ${network}`);
+      throw new RescanError(`no active scanner for network ${network}`, 409);
     }
+
+    const head = runtime.scanner.headBlock();
+    if (head !== null && fromBlock > head + 1) {
+      throw new RescanError(`from_block ${fromBlock} is ahead of head ${head}`, 422);
+    }
+    if (!force && head !== null && head - fromBlock > MAX_RESCAN_DEPTH_BLOCKS) {
+      throw new RescanError(
+        `from_block ${fromBlock} is more than ${MAX_RESCAN_DEPTH_BLOCKS} blocks behind head ${head}; ` +
+          'pass "force": true to override',
+        422,
+      );
+    }
+
+    this.log.warn({ network, fromBlock, force, head }, 'rescan requested via API');
     runtime.scanner.requestRescan(fromBlock);
   }
 

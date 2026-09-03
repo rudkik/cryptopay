@@ -9,12 +9,15 @@ use App\Http\Resources\Admin\AdminTokenResource;
 use App\Http\Resources\TokenHoldingResource;
 use App\Models\Token;
 use App\Models\TokenHolding;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class TokenController extends Controller
 {
+    public function __construct(private readonly AuditLogger $audit) {}
+
     public function index(Request $request): AnonymousResourceCollection
     {
         $tokens = Token::query()
@@ -36,6 +39,8 @@ class TokenController extends Controller
         // Money::format() blows up with a TypeError (500) *after* the row is written.
         $token->refresh();
 
+        $this->audit->log('token.created', $token, $request->validated());
+
         return (new AdminTokenResource($token->load('merchant')))->response()->setStatusCode(201);
     }
 
@@ -48,7 +53,10 @@ class TokenController extends Controller
     {
         $model = Token::query()->whereKey($token)->firstOrFail();
 
+        $before = $model->getAttributes();
         $model->update(self::withoutNullDefaults($request->validated()));
+
+        $this->audit->log('token.updated', $model, AuditLogger::diff($before, $model));
 
         return new AdminTokenResource($model->load('merchant'));
     }
@@ -59,6 +67,8 @@ class TokenController extends Controller
 
         // Soft retirement: sold history and holdings must survive.
         $model->forceFill(['is_active' => false])->save();
+
+        $this->audit->log('token.retired', $model);
 
         return response()->json(['ok' => true]);
     }

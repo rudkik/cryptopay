@@ -469,4 +469,121 @@ final class ClientTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         new Client('cp_live_x', '');
     }
+
+    /* ------------------------------------------------------------------
+     * Transport hardening: key handling, base URL, rate limiting.
+     * --------------------------------------------------------------- */
+
+    public function test_api_key_is_sent_only_in_the_authorization_header_never_in_the_url(): void
+    {
+        $transport = (new FakeTransport)->queue($this->jsonResponse(200, ['data' => [], 'meta' => []]));
+
+        $this->client($transport)->listInvoices(['status' => 'pending']);
+
+        $request = $transport->lastRequest();
+        $this->assertNotNull($request);
+        $this->assertStringNotContainsString(self::API_KEY, $request->url);
+        $this->assertSame('Bearer '.self::API_KEY, $request->headers['Authorization']);
+    }
+
+    public function test_rate_limited_response_exposes_retry_after_and_is_not_retried(): void
+    {
+        $transport = (new FakeTransport)->handleWith(fn (): Response => new Response(
+            429,
+            ['content-type' => 'application/json', 'retry-after' => '30'],
+            json_encode(['error' => ['code' => 'rate_limited', 'message' => 'Too many requests', 'details' => []]], JSON_THROW_ON_ERROR)
+        ));
+
+        try {
+            $this->client($transport)->listInvoices();
+            $this->fail('Expected an ApiException.');
+        } catch (ApiException $e) {
+            $this->assertTrue($e->isRateLimited());
+            $this->assertSame(30, $e->getRetryAfter());
+        }
+
+        // No hidden retry loop: exactly one request left the SDK.
+        $this->assertSame(1, $transport->requestCount());
+    }
+
+    public function test_retry_after_is_null_when_the_header_is_absent_or_not_a_plain_number(): void
+    {
+        $transport = (new FakeTransport)->handleWith(fn (): Response => new Response(
+            429,
+            ['content-type' => 'application/json', 'retry-after' => 'Wed, 21 Oct 2026 07:28:00 GMT'],
+            json_encode(['error' => ['code' => 'rate_limited', 'message' => 'slow down', 'details' => []]], JSON_THROW_ON_ERROR)
+        ));
+
+        try {
+            $this->client($transport)->listInvoices();
+            $this->fail('Expected an ApiException.');
+        } catch (ApiException $e) {
+            $this->assertNull($e->getRetryAfter());
+        }
+    }
+
+    public function test_constructor_rejects_a_base_url_that_is_not_http_or_https(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new Client(self::API_KEY, 'file:///etc/passwd', ['transport' => new FakeTransport]);
+    }
+
+    public function test_constructor_rejects_a_base_url_without_a_scheme(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new Client(self::API_KEY, 'pay.example.com', ['transport' => new FakeTransport]);
+    }
+
+    public function test_plain_http_against_a_non_local_host_warns_but_still_constructs(): void
+    {
+        $warnings = [];
+        set_error_handler(function (int $errno, string $message) use (&$warnings): bool {
+            $warnings[] = $message;
+
+            return true;
+        }, E_USER_WARNING);
+
+        try {
+            new Client(self::API_KEY, 'http://pay.example.com', ['transport' => new FakeTransport]);
+            $this->assertCount(1, $warnings);
+            $this->assertStringContainsString('unencrypted', $warnings[0]);
+
+            $warnings = [];
+            new Client(self::API_KEY, 'http://localhost:8095', ['transport' => new FakeTransport]);
+            new Client(self::API_KEY, 'http://127.0.0.1:8095', ['transport' => new FakeTransport]);
+            new Client(self::API_KEY, 'https://pay.example.com', ['transport' => new FakeTransport]);
+            $this->assertSame([], $warnings);
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    public function test_var_dump_of_the_client_does_not_expose_the_api_key(): void
+    {
+        $client = $this->client(new FakeTransport);
+
+        ob_start();
+        var_dump($client);
+        $dump = (string) ob_get_clean();
+
+        $this->assertStringNotContainsString(self::API_KEY, $dump);
+        $this->assertStringContainsString('redacted', $dump);
+    }
+
+    public function test_api_exception_never_contains_the_api_key(): void
+    {
+        $transport = (new FakeTransport)->queue($this->jsonResponse(401, [
+            'error' => ['code' => 'unauthenticated', 'message' => 'Unauthenticated.', 'details' => []],
+        ]));
+
+        try {
+            $this->client($transport)->listInvoices();
+            $this->fail('Expected an ApiException.');
+        } catch (ApiException $e) {
+            $this->assertStringNotContainsString(self::API_KEY, $e->getMessage());
+            $this->assertStringNotContainsString(self::API_KEY, json_encode($e->getDetails(), JSON_THROW_ON_ERROR));
+        }
+    }
 }

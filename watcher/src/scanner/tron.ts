@@ -4,9 +4,10 @@ import type { BackendClient } from '../backend/client.js';
 import type { StateStore } from '../state/store.js';
 import type { NetworkConfig, NetworkHealth, TokenConfig, TransactionReport } from '../types.js';
 import { tronBase58ToHex } from '../tronAddress.js';
+import { redactSecrets } from '../redact.js';
 import { ScannerHealthState, healthPayload, type Scanner } from './base.js';
 import { ConfirmationTracker, type PendingTx, type VerifyResult } from './tracker.js';
-import { blockNumberOf, buildTronReport, parseTronBlock } from './tronDecode.js';
+import { blockNumberOf, buildTronReport, isTronHash, parseTronBlock } from './tronDecode.js';
 import { TRON_MAX_BLOCKS_PER_CALL, TronClient } from './tronClient.js';
 import type { WatchAddressSet } from './addresses.js';
 
@@ -59,11 +60,17 @@ export class TronScanner implements Scanner {
     const map = new Map<string, TokenConfig>();
     for (const token of this.netConfig.tokens ?? []) {
       if (!token?.contract_address) continue;
-      try {
-        map.set(tronBase58ToHex(token.contract_address).toLowerCase(), token);
-      } catch {
-        this.log.warn({ contract: token.contract_address }, 'invalid tron token contract, skipped');
+      const raw = token.contract_address.trim();
+      // В БД контракт хранится в base58 (T…), но допускаем и hex 41… — иначе
+      // одна «неудобная» строка молча выключает сканирование токена.
+      const hex = /^(0x)?41[0-9a-fA-F]{40}$/.test(raw)
+        ? raw.replace(/^0x/i, '').toLowerCase()
+        : safeBase58ToHex(raw);
+      if (!hex) {
+        this.log.warn({ contract: raw }, 'invalid tron token contract, skipped');
+        continue;
       }
+      map.set(hex, token);
     }
     return map;
   }
@@ -85,7 +92,10 @@ export class TronScanner implements Scanner {
         await this.backend.postTransactionBatch(txs);
       }
     } catch (err) {
-      this.log.error({ network: 'tron', count: txs.length, err: (err as Error).message }, 'failed to report transactions');
+      this.log.error(
+        { network: 'tron', count: txs.length, err: redactSecrets((err as Error).message) },
+        'failed to report transactions',
+      );
     }
   }
 
@@ -106,10 +116,32 @@ export class TronScanner implements Scanner {
     }
     if (!info) return 'orphaned';
 
+    // Ответ обязан относиться к запрошенной транзакции. Если нода/прокси вернули
+    // чужой receipt — не подтверждаем ничего (иначе чужой SUCCESS зачислит депозит).
+    if (typeof info.id === 'string' && info.id.toLowerCase() !== tx.tx_hash.toLowerCase()) {
+      this.log.warn({ txHash: tx.tx_hash, returned: info.id }, 'gettransactioninfobyid returned a different tx');
+      return 'unknown';
+    }
+
+    // Верхнеуровневый `result` появляется только у неуспешных вызовов.
+    if (typeof info.result === 'string' && info.result.toUpperCase() === 'FAILED') {
+      return 'orphaned';
+    }
+
     const result = info.receipt?.result;
-    if (result === 'SUCCESS') return 'confirmed';
     if (result === undefined) return 'unknown';
-    return 'orphaned';
+    if (result !== 'SUCCESS') return 'orphaned';
+
+    if (typeof info.blockNumber === 'number' && info.blockNumber !== tx.block_number) {
+      // Транзакция та же и подтверждена, но попала в другую высоту (наш блок
+      // отвалился, tx переехала). Деньги дошли — подтверждаем, но фиксируем в логе.
+      this.log.warn(
+        { txHash: tx.tx_hash, detectedAt: tx.block_number, receiptAt: info.blockNumber },
+        'tron tx confirmed at a different block height than detected',
+      );
+    }
+
+    return 'confirmed';
   }
 
   private async refreshSolidityHead(): Promise<number | null> {
@@ -161,7 +193,11 @@ export class TronScanner implements Scanner {
     } catch (err) {
       this.state.fail(err);
       this.log.error(
-        { network: 'tron', err: (err as Error).message, consecutiveErrors: this.state.consecutiveErrors },
+        {
+          network: 'tron',
+          err: redactSecrets((err as Error).message),
+          consecutiveErrors: this.state.consecutiveErrors,
+        },
         'tron scan tick failed',
       );
     }
@@ -182,7 +218,23 @@ export class TronScanner implements Scanner {
     const blocks = await this.client.getBlockByLimit(from, endExclusive);
 
     const fresh: TransactionReport[] = [];
-    for (const block of blocks) {
+    // Курсор двигаем ТОЛЬКО по фактически разобранным блокам: getBlockByLimit
+    // возвращает непрерывный префикс и обрывается, если блок ещё недоступен или
+    // исчерпан лимит TronGrid. Раньше курсор прыгал на endExclusive-1 и
+    // недополученные блоки считались просканированными — потерянный депозит.
+    let scannedTo = from - 1;
+
+    for (const [offset, block] of blocks.entries()) {
+      const expected = from + offset;
+      const number = blockNumberOf(block);
+      if (number !== expected || !isTronHash(block.blockID)) {
+        this.log.warn(
+          { expected, got: number, blockId: typeof block.blockID === 'string' ? block.blockID : null },
+          'malformed tron block, stopping this batch before it',
+        );
+        break;
+      }
+
       for (const transfer of parseTronBlock(block, contracts)) {
         if (!this.addresses.has(transfer.to)) continue;
         if (transfer.valueRaw === 0n) continue;
@@ -193,6 +245,8 @@ export class TronScanner implements Scanner {
         const report = buildTronReport(transfer, token, confirmations);
         if (this.tracker.add(report)) fresh.push(report);
       }
+
+      scannedTo = expected;
     }
 
     if (fresh.length > 0) {
@@ -200,8 +254,10 @@ export class TronScanner implements Scanner {
       await this.report(fresh);
     }
 
-    this.state.lastScanned = endExclusive - 1;
-    this.persist();
+    if (scannedTo >= from) {
+      this.state.lastScanned = scannedTo;
+      this.persist();
+    }
   }
 
   health(): NetworkHealth {
@@ -230,5 +286,13 @@ export class TronScanner implements Scanner {
 
   async close(): Promise<void> {
     this.persist();
+  }
+}
+
+function safeBase58ToHex(address: string): string | null {
+  try {
+    return tronBase58ToHex(address).toLowerCase();
+  } catch {
+    return null;
   }
 }

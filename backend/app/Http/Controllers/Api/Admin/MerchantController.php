@@ -8,12 +8,15 @@ use App\Http\Requests\Admin\UpdateMerchantRequest;
 use App\Http\Resources\MerchantResource;
 use App\Models\Merchant;
 use App\Services\ApiKeyService;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class MerchantController extends Controller
 {
+    public function __construct(private readonly AuditLogger $audit) {}
+
     public function index(Request $request): AnonymousResourceCollection
     {
         $merchants = Merchant::query()
@@ -38,6 +41,8 @@ class MerchantController extends Controller
         // admin UI renders a brand-new merchant as "Inactive".
         $merchant->refresh();
 
+        $this->audit->log('merchant.created', $merchant, $request->validated());
+
         return (new MerchantResource($merchant))->response()->setStatusCode(201);
     }
 
@@ -55,7 +60,10 @@ class MerchantController extends Controller
     {
         $model = Merchant::query()->whereKey($merchant)->firstOrFail();
 
+        $before = $model->getAttributes();
         $model->update($request->validated());
+
+        $this->audit->log('merchant.updated', $model, AuditLogger::diff($before, $model));
 
         return new MerchantResource($model->load(['balances', 'apiKeys']));
     }
@@ -66,6 +74,9 @@ class MerchantController extends Controller
 
         $secret = ApiKeyService::generateWebhookSecret();
         $model->forceFill(['webhook_secret' => $secret])->save();
+
+        // The value itself is never written to the trail.
+        $this->audit->log('merchant.webhook_secret_rotated', $model);
 
         // Shown once so it can be copied into the merchant's integration.
         return response()->json([

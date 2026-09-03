@@ -210,4 +210,141 @@ final class WebhookTest extends TestCase
         $this->expectException(SignatureException::class);
         Webhook::verify($body, $headers, self::SECRET);
     }
+
+    /* ------------------------------------------------------------------
+     * Hardening cases. Each of these was a way to get a forged delivery
+     * accepted (or a check silently skipped) before verification was
+     * tightened; they are the regression net for that.
+     * --------------------------------------------------------------- */
+
+    public function test_empty_secret_is_rejected_instead_of_hmac_with_an_empty_key(): void
+    {
+        // An attacker can compute this signature: the "secret" is public knowledge.
+        $delivery = $this->signedDelivery('');
+
+        $this->expectException(SignatureException::class);
+        $this->expectExceptionMessageMatches('/not configured/');
+
+        Webhook::verify($delivery['body'], $delivery['headers'], '');
+    }
+
+    public function test_future_timestamp_beyond_tolerance_fails(): void
+    {
+        $delivery = $this->signedDelivery(null, time() + 3600);
+
+        $this->expectException(SignatureException::class);
+        $this->expectExceptionMessageMatches('/tolerance/');
+
+        Webhook::verify($delivery['body'], $delivery['headers'], self::SECRET);
+    }
+
+    public function test_timestamps_inside_the_window_are_accepted_on_both_sides_of_now(): void
+    {
+        foreach ([time() - 120, time() + 120] as $timestamp) {
+            $delivery = $this->signedDelivery(null, $timestamp);
+            $event = Webhook::verify($delivery['body'], $delivery['headers'], self::SECRET);
+
+            $this->assertInstanceOf(WebhookEvent::class, $event);
+        }
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function malformedSignatures(): array
+    {
+        return [
+            'no scheme prefix' => [str_repeat('a', 64)],
+            'wrong algorithm prefix' => ['sha1='.str_repeat('a', 64)],
+            'too short' => ['sha256=abc'],
+            'non-hex characters' => ['sha256='.str_repeat('z', 64)],
+            'empty after prefix' => ['sha256='],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('malformedSignatures')]
+    public function test_malformed_signature_header_is_rejected(string $signature): void
+    {
+        $delivery = $this->signedDelivery();
+        $headers = $delivery['headers'];
+        $headers['X-CryptoPay-Signature'] = $signature;
+
+        $this->expectException(SignatureException::class);
+
+        Webhook::verify($delivery['body'], $headers, self::SECRET);
+    }
+
+    public function test_upper_case_hex_signature_is_accepted(): void
+    {
+        $delivery = $this->signedDelivery();
+        $headers = $delivery['headers'];
+        $headers['X-CryptoPay-Signature'] = strtoupper($headers['X-CryptoPay-Signature']);
+
+        $event = Webhook::verify($delivery['body'], $headers, self::SECRET);
+
+        $this->assertSame('invoice.paid', $event->event);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function malformedTimestamps(): array
+    {
+        return [
+            'float' => ['1893456000.5'],
+            'exponent' => ['1e9'],
+            'leading space' => [' 1893456000'],
+            'negative' => ['-1893456000'],
+            'hex' => ['0x70c8bd00'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('malformedTimestamps')]
+    public function test_malformed_timestamp_header_is_rejected(string $timestamp): void
+    {
+        $delivery = $this->signedDelivery();
+        $headers = $delivery['headers'];
+        $headers['X-CryptoPay-Timestamp'] = $timestamp;
+
+        $this->expectException(SignatureException::class);
+
+        Webhook::verify($delivery['body'], $headers, self::SECRET, 0);
+    }
+
+    public function test_signature_is_checked_before_the_body_is_parsed(): void
+    {
+        $delivery = $this->signedDelivery();
+        $headers = $delivery['headers'];
+        $headers['X-CryptoPay-Signature'] = 'sha256='.str_repeat('0', 64);
+
+        $this->expectException(SignatureException::class);
+        $this->expectExceptionMessageMatches('/signature mismatch/');
+
+        Webhook::verify('not json at all', $headers, self::SECRET);
+    }
+
+    public function test_raw_body_is_used_verbatim_so_re_encoded_json_does_not_verify(): void
+    {
+        $delivery = $this->signedDelivery();
+        // Same data, different bytes.
+        $reEncoded = json_encode(json_decode($delivery['body'], true), JSON_PRETTY_PRINT);
+
+        $this->assertNotSame($delivery['body'], $reEncoded);
+        $this->expectException(SignatureException::class);
+
+        Webhook::verify((string) $reEncoded, $delivery['headers'], self::SECRET);
+    }
+
+    public function test_exception_never_contains_the_secret(): void
+    {
+        $delivery = $this->signedDelivery('a-different-secret');
+
+        try {
+            Webhook::verify($delivery['body'], $delivery['headers'], self::SECRET);
+            $this->fail('Expected a SignatureException.');
+        } catch (SignatureException $e) {
+            $this->assertStringNotContainsString(self::SECRET, $e->getMessage());
+            $this->assertStringNotContainsString(self::SECRET, (string) $e);
+        }
+    }
 }

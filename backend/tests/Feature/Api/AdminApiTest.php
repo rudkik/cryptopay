@@ -218,7 +218,7 @@ class AdminApiTest extends TestCase
 
         $created = $this->withToken($token)->postJson('/api/admin/users', [
             'name' => 'Viewer', 'email' => 'viewer@cryptopay.local',
-            'password' => 'password123', 'role' => 'viewer',
+            'password' => 'correct-horse-battery', 'role' => 'viewer',
         ])->assertCreated()->json('data.id');
 
         $this->withToken($token)->deleteJson("/api/admin/users/{$admin->id}")

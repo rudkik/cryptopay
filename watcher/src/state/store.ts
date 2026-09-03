@@ -65,19 +65,34 @@ export class StateStore {
 
     try {
       const raw = await fs.readFile(this.file, 'utf8');
-      const parsed = JSON.parse(raw) as WatcherState;
-      if (parsed && typeof parsed === 'object' && parsed.networks) {
+      const parsed: unknown = JSON.parse(raw);
+      const networks = sanitizeNetworks(parsed);
+      if (networks === null) {
+        this.log.warn(
+          { file: this.file },
+          'state file has an unexpected shape, ignoring it — стартовая высота будет взята ' +
+            'из last_scanned_block backend (/api/internal/config)',
+        );
+      } else {
         this.state = {
           version: STATE_VERSION,
-          updatedAt: parsed.updatedAt ?? new Date().toISOString(),
-          networks: parsed.networks,
+          updatedAt:
+            typeof (parsed as WatcherState).updatedAt === 'string'
+              ? (parsed as WatcherState).updatedAt
+              : new Date().toISOString(),
+          networks,
         };
-        this.log.info({ file: this.file }, 'state loaded');
+        this.log.info({ file: this.file, networks: Object.keys(networks) }, 'state loaded');
       }
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== 'ENOENT') {
-        this.log.warn({ file: this.file, err: (err as Error).message }, 'cannot read state file, starting fresh');
+        // Битый JSON (обрыв питания на записи, ручная правка) не должен мешать
+        // старту: продолжаем с пустым состоянием, backend отдаст last_scanned_block.
+        this.log.warn(
+          { file: this.file, err: (err as Error).message },
+          'cannot read state file, starting fresh (backend last_scanned_block will be used)',
+        );
       }
     }
 
@@ -154,4 +169,57 @@ export class StateStore {
   get persistent(): boolean {
     return this.writable;
   }
+}
+
+const NETWORK_CODES: readonly NetworkCode[] = ['ethereum', 'bsc', 'tron'];
+
+function isFiniteInt(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && Number.isFinite(value);
+}
+
+/**
+ * Файл состояния лежит на диске и переживает рестарты — доверять ему как коду
+ * нельзя. Всё, что не совпало по форме, отбрасывается: одна строка вместо числа
+ * в lastScannedBlock раньше ломала арифметику скана, а битый recentBlocks[].hash
+ * ронял checkReorg на каждом тике.
+ *
+ * Возвращает null, если файл вообще не похож на состояние watcher'а.
+ */
+function sanitizeNetworks(parsed: unknown): Partial<Record<NetworkCode, NetworkState>> | null {
+  if (!parsed || typeof parsed !== 'object') return null;
+  const networks = (parsed as { networks?: unknown }).networks;
+  if (!networks || typeof networks !== 'object') return null;
+
+  const out: Partial<Record<NetworkCode, NetworkState>> = {};
+
+  for (const code of NETWORK_CODES) {
+    const entry = (networks as Record<string, unknown>)[code];
+    if (!entry || typeof entry !== 'object') continue;
+    const raw = entry as Partial<NetworkState>;
+
+    const lastScannedBlock = isFiniteInt(raw.lastScannedBlock) && raw.lastScannedBlock >= 0 ? raw.lastScannedBlock : null;
+
+    const recentBlocks = Array.isArray(raw.recentBlocks)
+      ? raw.recentBlocks.filter(
+          (b): b is BlockRef =>
+            !!b && typeof b === 'object' && isFiniteInt((b as BlockRef).number) && typeof (b as BlockRef).hash === 'string',
+        )
+      : [];
+
+    const pending = Array.isArray(raw.pending)
+      ? raw.pending.filter(
+          (tx): tx is PendingTx =>
+            !!tx &&
+            typeof tx === 'object' &&
+            typeof (tx as PendingTx).tx_hash === 'string' &&
+            isFiniteInt((tx as PendingTx).log_index) &&
+            isFiniteInt((tx as PendingTx).block_number) &&
+            typeof (tx as PendingTx).block_hash === 'string',
+        )
+      : [];
+
+    out[code] = { lastScannedBlock, recentBlocks, pending };
+  }
+
+  return out;
 }

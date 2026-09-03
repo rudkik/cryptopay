@@ -20,6 +20,7 @@ import { usePaginatedList } from '@/composables/usePaginatedList'
 import { fieldErrors, reportError } from '@/composables/useErrorHandler'
 import { toast } from '@/utils/toast'
 import type { Option } from '@/utils/options'
+import { safeImageUrl } from '@/utils/url'
 
 const router = useRouter()
 
@@ -33,6 +34,9 @@ const { filters, items, meta, loading, hasFilters, load, setPage, resetFilters }
 })
 
 const merchantOptions = ref<Option[]>([])
+
+/** Token art is an operator-supplied remote URL — only plain http(s) is rendered. */
+const tokenImage = safeImageUrl
 
 const columns: Column[] = [
   { key: 'symbol', label: 'Token' },
@@ -159,11 +163,12 @@ onMounted(() => {
         <template #cell-symbol="{ row }">
           <div class="flex min-w-0 items-center gap-3">
             <img
-              v-if="row.image_url"
-              :src="row.image_url"
+              v-if="tokenImage(row.image_url)"
+              :src="tokenImage(row.image_url)!"
               :alt="''"
               class="h-8 w-8 shrink-0 rounded-full border border-border object-cover"
               loading="lazy"
+              referrerpolicy="no-referrer"
             />
             <span
               v-else

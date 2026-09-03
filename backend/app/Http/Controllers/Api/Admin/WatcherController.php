@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class WatcherController extends Controller
@@ -17,10 +18,16 @@ class WatcherController extends Controller
         try {
             $response = Http::timeout((int) config('services.watcher.timeout', 10))->get($url);
         } catch (Throwable $e) {
+            Log::warning('Watcher health probe failed', ['error' => $e->getMessage()]);
+
+            // A connection error message carries the internal service URL and
+            // resolved address; viewers do not need the internal topology.
             return response()->json([
                 'ok' => false,
                 'error' => 'watcher_unavailable',
-                'message' => $e->getMessage(),
+                'message' => app()->environment(['local', 'testing'])
+                    ? $e->getMessage()
+                    : 'The watcher did not respond.',
             ], 200);
         }
 

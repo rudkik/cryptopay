@@ -1,5 +1,18 @@
 name: cryptopay
 
+# Ротация логов: без неё json-file растёт до размера диска (watcher и queue
+# пишут непрерывно). 10m x 5 = максимум 50 МБ на контейнер.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+# Запрещаем процессу поднимать привилегии через setuid-бинари (su, sudo, ping).
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+
 x-backend-env: &backend-env
   APP_NAME: ${APP_NAME:-CryptoPay}
   APP_ENV: ${APP_ENV:-local}
@@ -14,25 +27,39 @@ x-backend-env: &backend-env
   DB_USERNAME: ${DB_USERNAME:-cryptopay}
   DB_PASSWORD: ${DB_PASSWORD:-secret}
   REDIS_HOST: redis
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-}
   REDIS_CLIENT: predis
   CACHE_STORE: redis
   QUEUE_CONNECTION: redis
   SESSION_DRIVER: redis
   INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-change-me-internal-token-please}
   WATCHER_URL: http://watcher:3100
-  SIMULATION_ENABLED: ${SIMULATION_ENABLED:-true}
+  # Время жизни токена админки (Sanctum), минуты. 720 = 12 часов.
+  SANCTUM_EXPIRATION: ${SANCTUM_EXPIRATION:-720}
+  # Таймаут доставки вебхука мерчанту, секунды.
+  WEBHOOK_TIMEOUT: ${WEBHOOK_TIMEOUT:-10}
+  # SSRF-предохранитель: по умолчанию вебхуки НЕ ходят на приватные/loopback
+  # адреса и на compose-имена. true — только для локального демо.
+  WEBHOOK_ALLOW_PRIVATE: ${WEBHOOK_ALLOW_PRIVATE:-false}
+  # Кнопка "Simulate payment" создаёт транзакцию в обход блокчейна. По умолчанию
+  # ВЫКЛЮЧЕНА: включать осознанно через .env на демо-стенде (make check-env
+  # ругается, если она включена вместе с APP_ENV=production).
+  SIMULATION_ENABLED: ${SIMULATION_ENABLED:-false}
   ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@cryptopay.local}
   ADMIN_PASSWORD: ${ADMIN_PASSWORD:-password}
 
 services:
   postgres:
     image: postgres:16-alpine
+    <<: *hardening
+    logging: *default-logging
     environment:
       POSTGRES_DB: ${DB_DATABASE:-cryptopay}
       POSTGRES_USER: ${DB_USERNAME:-cryptopay}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    # Порт наружу не публикуется: доступ только из docker-сети.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-cryptopay} -d ${DB_DATABASE:-cryptopay}"]
       interval: 5s
@@ -42,11 +69,32 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    <<: *hardening
+    logging: *default-logging
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    # requirepass включается, только если пароль задан: пустой --requirepass ""
+    # у redis означает «без пароля», а redis-cli -a "" ловит ошибку AUTH.
+    command:
+      - sh
+      - -c
+      - >-
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD";
+        else
+          exec redis-server --appendonly yes;
+        fi
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        - CMD-SHELL
+        - >-
+          if [ -n "$$REDIS_PASSWORD" ]; then
+            redis-cli --no-auth-warning -a "$$REDIS_PASSWORD" ping;
+          else
+            redis-cli ping;
+          fi
       interval: 5s
       timeout: 3s
       retries: 20
@@ -55,6 +103,8 @@ services:
   app:
     build:
       context: ./backend
+    <<: *hardening
+    logging: *default-logging
     environment: *backend-env
     volumes:
       - app-storage:/var/www/html/storage/app
@@ -71,6 +121,8 @@ services:
   queue:
     build:
       context: ./backend
+    <<: *hardening
+    logging: *default-logging
     command: ["php", "artisan", "queue:work", "redis", "--queue=default,webhooks", "--tries=3", "--sleep=2", "--max-time=3600"]
     environment:
       <<: *backend-env
@@ -84,6 +136,8 @@ services:
   scheduler:
     build:
       context: ./backend
+    <<: *hardening
+    logging: *default-logging
     command: ["php", "artisan", "schedule:work"]
     environment:
       <<: *backend-env
@@ -97,9 +151,21 @@ services:
   watcher:
     build:
       context: ./watcher
+    <<: *hardening
+    logging: *default-logging
+    # Кроме /app/data (том) и /tmp писать некуда — держим корень только на чтение.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
     environment:
       PORT: 3100
-      BACKEND_URL: http://nginx
+      # APP_ENV, а не NODE_ENV: NODE_ENV=production зашит в Dockerfile ради
+      # `npm ci --omit=dev` и не отражает окружение развёртывания. При любом
+      # значении, кроме local/dev/test, watcher откажется стартовать с пустым
+      # или дефолтным INTERNAL_API_TOKEN.
+      APP_ENV: ${APP_ENV:-production}
+      # Внутренний порт nginx: /api/internal наружу (на :80) отдаёт 404.
+      BACKEND_URL: http://nginx:8081
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-change-me-internal-token-please}
       ETH_RPC_URL: ${ETH_RPC_URL:-https://ethereum-rpc.publicnode.com}
       BSC_RPC_URL: ${BSC_RPC_URL:-https://bsc-rpc.publicnode.com}
@@ -122,8 +188,18 @@ services:
     build:
       context: .
       dockerfile: docker/nginx/Dockerfile
+    <<: *hardening
+    logging: *default-logging
+    # Единственный сервис с публикацией порта. Порт 8081 (internal API для
+    # watcher'а) намеренно НЕ публикуется.
     ports:
       - "${APP_PORT:-8095}:80"
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:size=32m,mode=0755
+      - /var/run:size=1m,mode=0755
+      - /run:size=1m,mode=0755
+      - /tmp:size=16m,mode=1777
     depends_on:
       app: { condition: service_started }
     restart: unless-stopped

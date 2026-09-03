@@ -1,4 +1,5 @@
-import { loadConfig } from './config.js';
+import { isPlaceholderToken, loadConfig } from './config.js';
+import { maskUrl, secretFingerprint } from './redact.js';
 import { logger } from './logger.js';
 import { Deriver } from './derivation.js';
 import { BackendClient } from './backend/client.js';
@@ -35,7 +36,9 @@ async function main(): Promise<void> {
   logger.info(
     {
       port: cfg.port,
-      backendUrl: cfg.backendUrl,
+      appEnv: cfg.appEnv,
+      // Маскируем: BACKEND_URL может нести basic-auth, RPC-url — ключ провайдера.
+      backendUrl: maskUrl(cfg.backendUrl),
       dataDir: cfg.dataDir,
       watcherEnabled: cfg.watcherEnabled,
       evmBatchBlocks: cfg.evmBatchBlocks,
@@ -44,8 +47,19 @@ async function main(): Promise<void> {
     'watcher starting',
   );
 
-  if (!cfg.internalToken) {
-    logger.error('INTERNAL_API_TOKEN is empty — authenticated endpoints will reject every request');
+  // INTERNAL_API_TOKEN — единственное, что отделяет /api/internal и /addresses/*
+  // от кого угодно внутри docker-сети. Пустой или дефолтный токен в бою — стоп.
+  if (isPlaceholderToken(cfg.internalToken)) {
+    const message =
+      'INTERNAL_API_TOKEN is empty or still the .env.example placeholder — ' +
+      'set a random secret (openssl rand -hex 32) shared with the backend';
+    if (cfg.strictSecrets) {
+      logger.fatal({ appEnv: cfg.appEnv }, `refusing to start: ${message}`);
+      process.exit(1);
+    }
+    logger.warn({ appEnv: cfg.appEnv }, `INSECURE (${cfg.appEnv} only): ${message}`);
+  } else {
+    logger.info({ internalToken: secretFingerprint(cfg.internalToken) }, 'internal token configured');
   }
 
   const store = new StateStore(cfg.stateFile, logger);

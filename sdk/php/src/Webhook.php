@@ -23,6 +23,12 @@ final class Webhook
 
     private const HEADER_DELIVERY = 'X-CryptoPay-Delivery';
 
+    /** The only signature shape the backend ever emits: sha256= + 64 hex chars. */
+    private const SIGNATURE_PATTERN = '/^sha256=[0-9a-f]{64}$/';
+
+    /** A unix timestamp as an unsigned decimal integer, nothing else. */
+    private const TIMESTAMP_PATTERN = '/^[0-9]{1,19}$/';
+
     /**
      * Verify a raw webhook payload and return the decoded event.
      *
@@ -35,27 +41,47 @@ final class Webhook
      */
     public static function verify(string $rawBody, array $headers, string $secret, int $tolerance = 300): WebhookEvent
     {
+        // An empty secret is never a valid configuration: HMAC with an empty key
+        // is perfectly computable by anyone, so accepting it would turn a missing
+        // CRYPTOPAY_WEBHOOK_SECRET into "every forged delivery verifies".
+        if ($secret === '') {
+            throw new SignatureException('CryptoPay webhook secret is not configured.');
+        }
+
         $signature = self::header($headers, self::HEADER_SIGNATURE);
         if ($signature === null || $signature === '') {
             throw new SignatureException('Missing '.self::HEADER_SIGNATURE.' header.');
         }
 
+        // Hex is case-insensitive on the wire; the comparison below is not, so
+        // normalise before both the shape check and hash_equals().
+        $signature = strtolower($signature);
+        if (preg_match(self::SIGNATURE_PATTERN, $signature) !== 1) {
+            throw new SignatureException('Malformed '.self::HEADER_SIGNATURE.' header.');
+        }
+
         $timestampHeader = self::header($headers, self::HEADER_TIMESTAMP);
-        if ($timestampHeader === null || $timestampHeader === '' || ! is_numeric($timestampHeader)) {
-            throw new SignatureException('Missing or non-numeric '.self::HEADER_TIMESTAMP.' header.');
+        if ($timestampHeader === null || preg_match(self::TIMESTAMP_PATTERN, $timestampHeader) !== 1) {
+            throw new SignatureException('Missing or malformed '.self::HEADER_TIMESTAMP.' header.');
         }
 
         $timestamp = (int) $timestampHeader;
 
+        // abs() enforces the window in BOTH directions: a replayed stale delivery
+        // and a far-future timestamp are equally rejected.
         if ($tolerance > 0 && abs(time() - $timestamp) > $tolerance) {
             throw new SignatureException('Webhook timestamp is outside the allowed tolerance.');
         }
 
         $expected = self::sign($secret, $timestamp, $rawBody);
 
+        // Constant-time comparison; the expected value goes first so the
+        // attacker-controlled string is the one being probed.
         if (! hash_equals($expected, $signature)) {
             throw new SignatureException('Webhook signature mismatch.');
         }
+
+        // Only now is the body trusted enough to parse.
 
         $payload = json_decode($rawBody, true);
         if (json_last_error() !== JSON_ERROR_NONE || ! is_array($payload)) {

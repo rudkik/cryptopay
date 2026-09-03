@@ -4,10 +4,14 @@ use App\Exceptions\ApiException;
 use App\Exceptions\ErrorResponse;
 use App\Http\Middleware\AuthenticateApiKey;
 use App\Http\Middleware\AuthenticateInternal;
+use App\Http\Middleware\EnsureActiveUser;
 use App\Http\Middleware\EnsureAdminRole;
 use App\Http\Middleware\IdempotencyKey;
+use App\Http\Middleware\LimitRequestSize;
+use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Auth\Middleware\Authenticate;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -32,6 +36,13 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(HandleCors::class);
 
+        // Applies to the whole API surface: nosniff/no-store on every
+        // response, and a body cap far below php.ini's post_max_size.
+        $middleware->api(prepend: [
+            SecurityHeaders::class,
+            LimitRequestSize::class,
+        ]);
+
         // API-only app: there is no `login` route. Laravel's default
         // `redirectGuestsTo(fn () => route('login'))` evaluates that route inside
         // Authenticate::redirectTo(), so a guest request that does not explicitly
@@ -51,10 +62,20 @@ return Application::configure(basePath: dirname(__DIR__))
             prepend: AuthenticateApiKey::class,
         );
 
+        // Same trap for the admin side: `active` has to run *after* the user
+        // has been resolved, otherwise $request->user() is still null and the
+        // check silently passes. Asserted by
+        // Tests\Feature\Security\AdminSecurityTest.
+        $middleware->appendToPriorityList(
+            after: Authenticate::class,
+            append: EnsureActiveUser::class,
+        );
+
         $middleware->alias([
             'api.key' => AuthenticateApiKey::class,
             'internal' => AuthenticateInternal::class,
             'admin' => EnsureAdminRole::class,
+            'active' => EnsureActiveUser::class,
             'idempotency' => IdempotencyKey::class,
         ]);
     })
@@ -80,10 +101,14 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             if ($e instanceof ValidationException) {
+                // The login throttle raises a ValidationException with a 429
+                // status; flattening everything to 422 hid that from clients.
+                $status = $e->status ?: 422;
+
                 return ErrorResponse::make(
-                    'validation_error',
-                    'The given data was invalid.',
-                    422,
+                    $status === 429 ? 'rate_limited' : 'validation_error',
+                    $status === 429 ? 'Too many requests.' : 'The given data was invalid.',
+                    $status,
                     $e->errors(),
                 );
             }
@@ -124,11 +149,20 @@ return Application::configure(basePath: dirname(__DIR__))
                 return ErrorResponse::make($code, $e->getMessage() ?: 'Request failed.', $status);
             }
 
+            // Debug detail is gated on the environment as well as the flag:
+            // APP_DEBUG=true is shipped in .env.example, and a production
+            // deployment that inherits it must still not return exception
+            // messages (which routinely carry SQL, paths and connection
+            // strings) to an unauthenticated caller.
+            $verbose = config('app.debug') && ! app()->environment('production');
+
+            report($e);
+
             return ErrorResponse::make(
                 'server_error',
-                config('app.debug') ? $e->getMessage() : 'Server error.',
+                $verbose ? $e->getMessage() : 'Server error.',
                 500,
-                config('app.debug') ? ['exception' => $e::class] : [],
+                $verbose ? ['exception' => $e::class] : [],
             );
         });
     })->create();

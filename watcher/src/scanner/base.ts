@@ -1,3 +1,4 @@
+import { redactSecrets } from '../redact.js';
 import type { NetworkCode, NetworkConfig, NetworkHealth } from '../types.js';
 
 export interface Scanner {
@@ -35,7 +36,11 @@ export class ScannerHealthState {
 
   fail(err: unknown): void {
     this.consecutiveErrors += 1;
-    this.errorMessage = err instanceof Error ? err.message : String(err);
+    // Сообщения ethers/fetch содержат полный requestUrl RPC-ноды, а у платных
+    // провайдеров ключ лежит прямо в URL. errorMessage уходит в /health (без
+    // auth) и в heartbeat, поэтому маскируем на входе, а не на выходе.
+    const raw = err instanceof Error ? err.message : String(err);
+    this.errorMessage = redactSecrets(raw).slice(0, 500);
     this.updatedAt = new Date().toISOString();
   }
 
