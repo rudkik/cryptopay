@@ -111,20 +111,31 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/admin/UsersView.vue'),
         meta: { title: 'Admin users', adminOnly: true },
       },
+      // Docs and Swagger are public (see the /docs routes below); keep the old
+      // admin paths working for bookmarks.
+      { path: 'docs', redirect: '/docs' },
+      { path: 'swagger', redirect: '/swagger' },
+    ],
+  },
+  {
+    // Integrator-facing documentation: intentionally reachable without sign-in
+    // so the links can be handed to the teams connecting their projects.
+    path: '/',
+    component: () => import('@/layouts/PublicDocsLayout.vue'),
+    children: [
       {
         path: 'docs',
         name: 'docs',
         component: () => import('@/views/admin/DocsView.vue'),
-        meta: { title: 'Merchant API docs' },
+        meta: { public: true, title: 'Merchant API docs' },
       },
       {
-        // Swagger UI over `public/openapi.yaml`. Lazily imported like every
-        // other view, which keeps the ~1.5 MB swagger-ui bundle and its CSS
-        // out of every page that is not this one.
+        // Separate chunk on purpose: the ~1.5 MB swagger-ui bundle and its CSS
+        // must not be paid for by the rest of the app.
         path: 'swagger',
         name: 'swagger',
         component: () => import('@/views/admin/SwaggerView.vue'),
-        meta: { title: 'Swagger' },
+        meta: { public: true, title: 'Swagger' },
       },
     ],
   },

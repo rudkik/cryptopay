@@ -24,7 +24,7 @@ make up                       # docker compose up -d --build
 - Админка: http://localhost:8095 — логин `admin@cryptopay.local` / `password` (меняется в `.env`)
 - Merchant API: http://localhost:8095/api/v1 — демо‑ключ печатается в логах `app` при первом старте
   (`docker compose logs app | grep cp_live_`)
-- Документация API с примерами: http://localhost:8095/admin/docs
+- Документация API с примерами: http://localhost:8095/docs
 
 Разделы админки: **Dashboard**, **Invoices**, **Transactions**, **Webhooks**, **Services**, **Wallet**, **Networks**,
 **Admin users**, **API docs**, **Swagger**. **Service** — это подключённый проект (в API он по-прежнему `merchant`):
@@ -86,7 +86,7 @@ curl -X POST http://localhost:8095/api/v1/invoices \
 Покупка токенов (опциональный модуль, по умолчанию выключен — включается `TOKEN_SALE_ENABLED=true`):
 `POST /api/v1/token-purchases` создаёт счёт, после оплаты токены зачисляются на `customer_id`
 (`GET /api/v1/customers/{customer_id}/holdings`). При выключенном модуле все эндпоинты token sale отдают `404`,
-а раздел «Tokens» в админке скрыт. Полный список эндпоинтов — SPEC.md §6 и страница `/admin/docs`.
+а раздел «Tokens» в админке скрыт. Полный список эндпоинтов — SPEC.md §6 и страница `/docs`.
 
 ## SDK для подключения (готовые обёртки)
 
@@ -105,7 +105,7 @@ $event = \CryptoPay\Sdk\Webhook::verify($rawBody, $headers, $webhookSecret);
 if ($event->isPaid()) { /* зачислить $event->invoice->amountConfirmed пользователю $event->invoice->customerId */ }
 ```
 
-Подробные примеры и Laravel-интеграция: `sdk/php/README.md`, `sdk/js/README.md`, страница `/admin/docs` → SDKs.
+Подробные примеры и Laravel-интеграция: `sdk/php/README.md`, `sdk/js/README.md`, страница `/docs` → SDKs.
 
 ## Полезные команды
 

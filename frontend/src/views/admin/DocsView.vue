@@ -6,14 +6,30 @@ import PageHeader from '@/components/PageHeader.vue'
 import { API_DOCS } from '@/content/apiDocs'
 import type { DocBlock } from '@/content/docsTypes'
 import { useAuthStore } from '@/stores/auth'
+import { authApi } from '@/api/auth'
+import type { AppFeatures } from '@/api/types'
 
 const auth = useAuthStore()
+
+/**
+ * Module flags: a signed-in admin already has them; an anonymous integrator
+ * (this page is public) reads them from the unauthenticated /public/config.
+ */
+const features = ref<AppFeatures>({ ...auth.features })
+onMounted(async () => {
+  if (auth.isAuthenticated) return
+  try {
+    features.value = (await authApi.publicConfig()).features
+  } catch {
+    // Flags stay all-off: optional sections are simply not shown.
+  }
+})
 
 /** Sections behind a disabled module are dropped entirely (SPEC §8). */
 const docs = computed(() =>
   API_DOCS.map((group) => ({
     ...group,
-    sections: group.sections.filter((section) => !section.feature || auth.features[section.feature]),
+    sections: group.sections.filter((section) => !section.feature || features.value[section.feature]),
   })).filter((group) => group.sections.length > 0),
 )
 

@@ -70,8 +70,8 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { label: 'Wallet', to: '/admin/wallet', icon: Wallet },
       { label: 'Networks', to: '/admin/networks', icon: Network },
       { label: 'Admin users', to: '/admin/users', icon: Users, adminOnly: true },
-      { label: 'API docs', to: '/admin/docs', icon: BookOpen },
-      { label: 'Swagger', to: '/admin/swagger', icon: Braces },
+      { label: 'API docs', to: '/docs', icon: BookOpen },
+      { label: 'Swagger', to: '/swagger', icon: Braces },
     ],
   },
 ]
