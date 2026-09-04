@@ -154,7 +154,8 @@ onMounted(() => {
           <button
             type="button"
             class="btn-ghost btn-sm"
-            :disabled="retrying === row.id"
+            :disabled="!auth.isAdmin || retrying === row.id"
+            :title="auth.isAdmin ? undefined : 'Only an admin can retry a delivery.'"
             :aria-label="`Retry ${row.event}`"
             @click.stop="retry(row)"
           >

@@ -961,8 +961,13 @@ components:
               details: {}
     WatcherUnavailable:
       description: |
-        Вотчер недоступен, депозитный адрес выдать нельзя. Повторите запрос
-        позже с тем же `Idempotency-Key`.
+        Депозитный адрес выдать нельзя. Два кода:
+        `watcher_unavailable` — вотчер недоступен (повторите запрос позже с тем
+        же `Idempotency-Key`); `wallet_not_configured` — для сети не задан xpub
+        ни в базе, ни в env вотчера, и её должен настроить администратор
+        (Admin → Wallet). Такая сеть не попадает ни в `GET /api/v1/networks`,
+        ни в `options` публичного счёта, поэтому обычный путь отдаёт `422`
+        раньше — этот `503` остаётся на гонку с изменением настроек.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -986,6 +991,7 @@ components:
         - rate_limited
         - request_error
         - watcher_unavailable
+        - wallet_not_configured
         - server_error
 
     Error:
@@ -1251,7 +1257,10 @@ components:
         created_at: { type: [string, 'null'], format: date-time }
         confirmations_required:
           type: integer
-          description: Сколько подтверждений нужно в выбранной сети.
+          description: >-
+            Сколько подтверждений нужно в выбранной сети. `0`, пока сеть не
+            выбрана (`selection_required: true`) — до выбора значение брать
+            неоткуда, ориентируйтесь на `options[].confirmations_required`.
         transactions:
           type: array
           items: { $ref: '#/components/schemas/Transaction' }
@@ -1504,14 +1513,13 @@ components:
         underpayment_tolerance:
           allOf: [{ $ref: '#/components/schemas/Amount' }]
           description: |
-            Недоплата в единицах валюты, которую всё ещё считаем полной оплатой.
+            Допустимая недоплата в **процентах** от суммы счёта: подтверждённая
+            сумма >= `amount - amount * tolerance / 100` уже считается полной
+            оплатой. По умолчанию `"0.500000000000000000"` (0.5 %).
         created_at: { type: [string, 'null'], format: date-time }
         balances:
           type: array
           items: { $ref: '#/components/schemas/Balance' }
-        api_keys:
-          type: array
-          items: { $ref: '#/components/schemas/ApiKey' }
         webhook:
           type: object
           required: [url, configured, events, signature_header]

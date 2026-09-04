@@ -99,7 +99,9 @@ Base URL: `http://localhost:8095`. Ответы JSON. Ошибки:
 ```json
 { "error": { "code": "validation_error", "message": "...", "details": {"amount": ["..."]} } }
 ```
-Коды: `unauthenticated` (401), `forbidden` (403), `not_found` (404), `validation_error` (422), `invalid_state` (409), `rate_limited` (429), `server_error` (500).
+Коды: `unauthenticated` (401), `forbidden` (403), `not_found` (404), `validation_error` (422), `invalid_state` (409), `rate_limited` (429), `server_error` (500),
+`watcher_unavailable` (503, вотчер недоступен) и `wallet_not_configured` (503, для сети не задан xpub).
+Метод, не поддерживаемый маршрутом, отдаёт 405 с кодом `not_found`; тело больше 1 МБ — 413 с кодом `validation_error`.
 
 ### 6.1 Merchant API — `/api/v1/*`
 Auth: `Authorization: Bearer cp_live_...`. Rate limit 120 req/min на ключ. Идемпотентность создания: заголовок `Idempotency-Key` (хранить в cache 24h → тот же ответ).
@@ -110,7 +112,7 @@ Auth: `Authorization: Bearer cp_live_...`. Rate limit 120 req/min на ключ.
   "id": "uuid", "type": "payment", "external_id": "order-1", "status": "pending", "is_paid": false,
   "selection_required": false,
   "currency": "USDT", "network": "tron",
-  "amount": "100.000000", "amount_received": "0", "amount_confirmed": "0",
+  "amount": "100.000000", "amount_received": "0.000000", "amount_confirmed": "0.000000",
   "address": "T...", "payment_url": "http://localhost:8095/pay/{id}",
   "qr_payload": "T..." ,
   "description": "...", "customer_email": null, "customer_id": null, "metadata": {},
@@ -126,18 +128,18 @@ Auth: `Authorization: Bearer cp_live_...`. Rate limit 120 req/min на ключ.
 
 - `POST /api/v1/invoices` — body: `amount` (required, >0), `currency` (USDT|USDC, optional), `network` (ethereum|bsc|tron, optional; либо обе, либо ни одной — одна без второй = 422), `external_id?`, `description?`, `customer_email?`, `customer_id?`, `metadata?` (object), `success_url?`, `cancel_url?`, `expires_in?` (сек, default 3600, max 86400). → 201 Invoice.
 - `POST /api/v1/invoices/{id}/select` — body `{ "currency", "network" }` → Invoice. Мерчант‑сторонний двойник §6.3: то же поведение и те же коды ошибок, для мерчанта с собственным чекаутом.
-- `GET /api/v1/invoices` — фильтры `status`, `external_id`, `network`, `currency`, `from`, `to`, `per_page` (≤100). Пагинация Laravel (`data`, `meta`).
+- `GET /api/v1/invoices` — фильтры `status`, `external_id`, `network`, `currency`, `from`, `to`, `per_page` (≤100). Пагинация Laravel (`data`, `meta`, `links`).
 - `GET /api/v1/invoices/{id}` → Invoice.
 - `POST /api/v1/invoices/{id}/cancel` → Invoice (только из `pending`, иначе 409).
 - `GET /api/v1/networks` → `[ { "code", "name", "chain_id", "confirmations_required", "tokens": [ { "symbol", "contract_address", "decimals" } ] } ]` (только enabled).
-- `GET /api/v1/balances` → `[ { "currency", "network", "available", "pending" } ]` + `totals` по currency.
+- `GET /api/v1/balances` → `{ "data": [ { "currency", "network", "available", "pending" } ], "totals": { "USDT": {"available", "pending"} } }` (`totals` — сумма по валюте через все сети, всегда с 6 знаками).
 - `GET /api/v1/transactions` — фильтры `invoice_id`, `network`, `status`, пагинация.
 - **Token sale (опциональный модуль, §6.4).** Все эндпоинты ниже живут только при `TOKEN_SALE_ENABLED=true`; иначе — `404 not_found` с сообщением «Token sale module is disabled».
 - `GET /api/v1/tokens` — токены мерчанта (active).
 - `POST /api/v1/token-purchases` — `token_id`, одно из `token_amount` | `pay_amount`, `currency` (optional), `network` (optional; пара — как у счетов), `customer_id` (required), `customer_email?`, `external_id?`, `success_url?`, `cancel_url?`, `metadata?`, `expires_in?` → 201 `{ "purchase": {...}, "invoice": Invoice }`. Цена фиксируется на момент создания; `pay_amount = token_amount * price_usd` (USDT/USDC считаем = 1 USD).
 - `GET /api/v1/token-purchases/{id}`; `GET /api/v1/token-purchases?customer_id=`.
 - `GET /api/v1/customers/{customer_id}/holdings` → `[ { "token": {...}, "amount": "..." } ]`.
-- `GET /api/v1/me` → мерчант + webhook settings (без секрета).
+- `GET /api/v1/me` → мерчант + `balances` + `webhook` (url, configured, events, signature_header — без секрета) + `api_key` (метаданные ключа, которым сделан запрос).
 
 ### 6.2 Webhooks (исходящие, backend → мерчант)
 `POST {merchant.webhook_url}`, `Content-Type: application/json`, заголовки:

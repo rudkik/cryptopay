@@ -485,8 +485,21 @@ onMounted(async () => {
                       :checked="selectedCurrency === currency"
                       @change="chooseCurrency(currency)"
                     />
+                    <!--
+                      Selected/hover state is bound explicitly rather than via
+                      `peer-checked:`/`peer-hover:`: Tailwind emits the `hover`
+                      variant after `checked`, so at equal specificity hovering
+                      the chosen currency repainted it as unselected — the payer
+                      could not see which coin they had picked. The network
+                      cards below already bind their state the same way.
+                    -->
                     <span
-                      class="flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-center text-sm font-medium text-muted transition-colors peer-hover:bg-surface peer-hover:text-text peer-checked:bg-primary peer-checked:text-primary-on peer-checked:shadow-glow-sm peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface"
+                      class="flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-center text-sm font-medium transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface"
+                      :class="
+                        selectedCurrency === currency
+                          ? 'bg-primary text-primary-on shadow-glow-sm'
+                          : 'text-muted hover:bg-surface hover:text-text'
+                      "
                     >
                       <CoinLogo :currency="currency" :size="26" />
                       {{ currency }}

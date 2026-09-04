@@ -1,0 +1,38 @@
+# Контекст корня репозитория использует ровно один образ — docker/nginx/Dockerfile,
+# и ему нужны только docker/nginx/, frontend/ и backend/public/. Всё остальное
+# просто уезжает демону: в рабочей копии это ~420 МБ на каждую сборку.
+#
+# У backend/ и watcher/ свои контексты и свои .dockerignore — этот файл на них
+# не влияет.
+
+.git
+.gitignore
+.idea
+.DS_Store
+**/.DS_Store
+*.log
+
+# Секреты и локальные оверрайды не должны попадать в образ.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Зависимости и сборочные артефакты — ставятся внутри образа.
+**/node_modules
+**/vendor
+frontend/dist
+watcher/dist
+
+# Не участвует в сборке nginx.
+watcher
+sdk
+scripts
+backend/app
+backend/bootstrap
+backend/config
+backend/database
+backend/resources
+backend/routes
+backend/storage
+backend/tests
+*.md

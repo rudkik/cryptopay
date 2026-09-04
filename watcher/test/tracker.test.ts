@@ -109,13 +109,87 @@ describe('ConfirmationTracker state machine', () => {
     expect(h.reports).toHaveLength(2);
   });
 
-  it('marks a transaction orphaned when verification says the chain dropped it', async () => {
+  it('marks a transaction orphaned only after the verdict repeats', async () => {
     const o = harness('orphaned');
     o.tracker.add(tx({ block_number: 100 }));
 
-    const updates = await o.tracker.onHead(111);
-    expect(updates[0]).toMatchObject({ status: 'orphaned' });
+    // Первый отрицательный вердикт — не приговор: отставшая нода публичного RPC
+    // отдаёт пустой/чужой receipt для совершенно живой транзакции.
+    const first = await o.tracker.onHead(111);
+    expect(first.every((u) => u.status !== 'orphaned')).toBe(true);
+    expect(o.tracker.size).toBe(1);
+
+    const second = await o.tracker.onHead(112);
+    expect(second[0]).toMatchObject({ status: 'orphaned' });
     expect(o.tracker.size).toBe(0);
+  });
+
+  it('REGRESSION: одиночный отрицательный вердикт не отменяет платёж, который затем подтвердился', async () => {
+    // Сценарий: tx найдена, receipt на одном тике не пришёл/пришёл из другой
+    // ветки, а потом нода догнала цепочку и отдала нормальный receipt.
+    let calls = 0;
+    const h2 = harness(() => (++calls === 1 ? 'orphaned' : 'confirmed'));
+    h2.tracker.add(tx({ block_number: 100 }));
+
+    await h2.tracker.onHead(111);
+    expect(h2.tracker.size).toBe(1);
+
+    const updates = await h2.tracker.onHead(112);
+    expect(updates.at(-1)).toMatchObject({ status: 'confirmed' });
+    expect(h2.reports.flat().some((u) => u.status === 'orphaned')).toBe(false);
+  });
+
+  it('REGRESSION: confirmations никогда не уменьшаются, даже если head поехал назад', async () => {
+    // Публичные RPC балансируются: eth_blockNumber от ноды B может быть меньше,
+    // чем от ноды A секунду назад.
+    const h2 = harness('unknown');
+    h2.tracker.add(tx({ block_number: 100, confirmations: 1 }));
+
+    await h2.tracker.onHead(108); // 9 подтверждений
+    await h2.tracker.onHead(104); // head уехал назад — наружу это уйти не должно
+    await h2.tracker.onHead(109);
+
+    const seen = h2.reports.flat().map((u) => u.confirmations);
+    expect(seen.length).toBeGreaterThan(0);
+    for (let i = 1; i < seen.length; i += 1) {
+      expect(seen[i]!).toBeGreaterThanOrEqual(seen[i - 1]!);
+    }
+    expect(Math.min(...seen)).toBeGreaterThanOrEqual(9);
+  });
+
+  it('head, прыгнувший сразу за порог, подтверждает транзакцию за один шаг', async () => {
+    const h2 = harness('confirmed');
+    h2.tracker.add(tx({ block_number: 100 }));
+
+    const updates = await h2.tracker.onHead(100 + REQUIRED * 100);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({ status: 'confirmed', confirmations: REQUIRED });
+  });
+
+  it('confirmed уходит в backend ровно один раз, повторные head ничего не шлют', async () => {
+    const h2 = harness('confirmed');
+    h2.tracker.add(tx({ block_number: 100 }));
+
+    await h2.tracker.onHead(120);
+    await h2.tracker.onHead(121);
+    await h2.tracker.onHead(122);
+
+    const confirmed = h2.reports.flat().filter((u) => u.status === 'confirmed');
+    expect(confirmed).toHaveLength(1);
+    expect(h2.verify).toHaveBeenCalledTimes(1);
+  });
+
+  it('orphanStrikes переживают рестарт (snapshot/restore)', async () => {
+    const first = harness('orphaned');
+    first.tracker.add(tx({ block_number: 100 }));
+    await first.tracker.onHead(111);
+    expect(first.tracker.size).toBe(1);
+
+    const revived = harness('orphaned');
+    revived.tracker.restore(first.tracker.snapshot());
+    // Один страйк уже накоплен — следующего достаточно для приговора.
+    const updates = await revived.tracker.onHead(112);
+    expect(updates[0]).toMatchObject({ status: 'orphaned' });
   });
 
   it('keeps waiting while verification is inconclusive, then gives up as orphaned', async () => {

@@ -20,6 +20,19 @@ class PositiveAmount implements ValidationRule
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
+        // Money::normalize() casts to string, so an array or object argument
+        // raised "Array to string conversion" and turned a bad request into a
+        // 500. `amount` is the very first thing a merchant sends, and JSON puts
+        // no constraint on its type, so the guard belongs here rather than in a
+        // sibling `string` rule that a caller may forget. The other rules
+        // (ConfiguredWallet, BoundedMetadata, WebhookUrl) all check their input
+        // type; this one did not.
+        if (! is_string($value) && ! is_int($value) && ! is_float($value)) {
+            $fail('The :attribute must be a decimal amount, sent as a string.');
+
+            return;
+        }
+
         $amount = Money::normalize($value);
 
         if (Money::cmp($amount, '0') <= 0) {

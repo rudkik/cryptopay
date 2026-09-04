@@ -312,7 +312,6 @@ describe('unwrapping data envelopes', () => {
           underpayment_tolerance: '0.01',
           created_at: '2026-09-02T00:00:00Z',
           balances: [balanceFixture],
-          api_keys: {},
           webhook: { url: null, configured: false, events: [], signature_header: 'X-CryptoPay-Signature' },
           api_key: null,
         },

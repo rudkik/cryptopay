@@ -34,5 +34,28 @@ shell:
 keys: ## generate mnemonic + xpubs for the watcher
 	docker compose run --rm --no-deps watcher npm run keygen
 
-test:
-	docker compose exec app php artisan test
+# Тесты нельзя запускать в работающем контейнере app: боевой образ собран
+# `composer install --no-dev` (в нём нет phpunit) и без каталога tests/
+# (backend/.dockerignore). Поэтому — одноразовый контейнер: tests/ монтируется
+# внутрь, dev-зависимости ставятся на лету.
+#
+# Переменные ниже дублируют <env> из backend/phpunit.xml намеренно: PHPUnit не
+# перезаписывает уже заданные переменные окружения (без force="true"), а compose
+# отдаёт контейнеру боевые APP_URL/QUEUE_CONNECTION=redis/CACHE_STORE=redis —
+# и тесты падают на них, а не на коде.
+#
+#   make test                       # весь набор
+#   make test ARGS="--filter=Wallet" # часть
+test: ## backend-тесты в одноразовом контейнере
+	@docker compose run --rm --no-deps \
+	  -e APP_ENV=testing -e APP_URL=http://localhost:8080 -e APP_DEBUG=false \
+	  -e DB_CONNECTION=sqlite -e DB_DATABASE=:memory: \
+	  -e CACHE_STORE=array -e QUEUE_CONNECTION=sync -e SESSION_DRIVER=array \
+	  -e INTERNAL_API_TOKEN=test-internal-token -e WATCHER_URL=http://watcher.test:3100 \
+	  -e SIMULATION_ENABLED=true -e TOKEN_SALE_ENABLED=false \
+	  -v "$(CURDIR)/backend/tests:/opt/tests:ro" \
+	  --entrypoint sh app -c '\
+	    cp -R /opt/tests /var/www/html/tests && mkdir -p /var/www/html/tests/Unit && \
+	    touch /var/www/html/.env && \
+	    composer install --no-interaction --no-progress --quiet && \
+	    php artisan test $(ARGS)'

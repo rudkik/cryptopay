@@ -138,7 +138,11 @@ const timeline = computed<TimelineStep[]>(() => {
     steps.push({
       key: 'terminal',
       label: status === 'cancelled' ? 'Cancelled' : 'Expired',
-      at: inv.expires_at,
+      // `expires_at` *is* the moment an invoice expires, but a cancellation
+      // happens whenever the merchant asks — usually well before then, so
+      // reusing it printed a timestamp in the future. The API carries no
+      // `cancelled_at`, so the step stays dateless rather than lying.
+      at: status === 'cancelled' ? null : inv.expires_at,
       state: 'failed',
     })
   } else if (status === 'partially_paid') {
@@ -261,11 +265,21 @@ onMounted(() => void load())
           <RefreshCw :size="14" :class="refreshing ? 'animate-spin' : ''" aria-hidden="true" />
           Refresh
         </button>
-        <button v-if="invoice" type="button" class="btn-secondary btn-sm" @click="openSimulate">
+        <button
+          v-if="invoice && auth.isAdmin"
+          type="button"
+          class="btn-secondary btn-sm"
+          @click="openSimulate"
+        >
           <FlaskConical :size="14" aria-hidden="true" />
           Simulate payment
         </button>
-        <button v-if="canCancel" type="button" class="btn-danger btn-sm" @click="cancelOpen = true">
+        <button
+          v-if="canCancel && auth.isAdmin"
+          type="button"
+          class="btn-danger btn-sm"
+          @click="cancelOpen = true"
+        >
           <Ban :size="14" aria-hidden="true" />
           Cancel
         </button>
@@ -558,7 +572,8 @@ onMounted(() => void load())
             <button
               type="button"
               class="btn-ghost btn-sm"
-              :disabled="retryingWebhook === row.id"
+              :disabled="!auth.isAdmin || retryingWebhook === row.id"
+              :title="auth.isAdmin ? undefined : 'Only an admin can retry a delivery.'"
               :aria-label="`Retry delivery ${row.event}`"
               @click="retryWebhook(row)"
             >

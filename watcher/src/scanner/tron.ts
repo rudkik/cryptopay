@@ -114,7 +114,12 @@ export class TronScanner implements Scanner {
       );
       throw err;
     }
-    if (!info) return 'orphaned';
+    // Пустой ответ TronGrid ({}) — «нода/индекс ещё не знает про транзакцию»,
+    // а не «транзакции нет». Отменять по нему зачисление нельзя (см. EvmScanner.verify).
+    if (!info) {
+      this.log.warn({ txHash: tx.tx_hash }, 'gettransactioninfobyid returned nothing, confirmation deferred');
+      return 'unknown';
+    }
 
     // Ответ обязан относиться к запрошенной транзакции. Если нода/прокси вернули
     // чужой receipt — не подтверждаем ничего (иначе чужой SUCCESS зачислит депозит).

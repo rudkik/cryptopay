@@ -80,11 +80,32 @@ export function isTronHash(value: unknown): value is string {
   return typeof value === 'string' && HEX64.test(value.toLowerCase());
 }
 
-/** ABI-слово с адресом: 12 нулевых байт (24 нуля) + 20 байт. */
+/**
+ * ABI-слово с адресом -> hex-адрес Tron (41 ‖ 20 байт).
+ *
+ * В mainnet реально встречаются ДВЕ формы кодирования аргумента `address`
+ * в calldata TriggerSmartContract, и обе валидны для TVM, который берёт
+ * младшие 20 байт слова и приписывает префикс 0x41:
+ *
+ *   1) EVM-стиль:  0x0000…0000 ‖ 20 байт            (12 нулевых байт, 24 нуля)
+ *   2) Tron-стиль: 0x0000…0041 ‖ 20 байт            (11 нулевых байт, затем 0x41)
+ *
+ * Раньше принималась только форма (1). На реальных блоках mainnet форму (2)
+ * использует примерно треть переводов USDT/USDC (66 из 207 в блоках
+ * 85953089–85953090), и все они молча отбрасывались — то есть каждый третий
+ * реальный депозит в Tron не был бы обнаружен вовсе.
+ *
+ * Старшие 12 байт, отличные от нулей и 0x41, не принимаем: TVM их обрежет,
+ * но такое слово не порождается ни одним известным кошельком, а «угадывать»
+ * получателя по мусорному слову — не то, на чём стоит зачислять деньги.
+ */
+const TRON_ADDRESS_WORD = /^0{22}(?:00|41)([0-9a-f]{40})$/;
+
 function addressWordToHex(word: string): string | null {
   if (word.length !== 64) return null;
-  if (!/^0{24}[0-9a-f]{40}$/.test(word)) return null;
-  const hex = `41${word.slice(24)}`;
+  const match = TRON_ADDRESS_WORD.exec(word);
+  if (!match) return null;
+  const hex = `41${match[1]}`;
   return TRON_HEX_ADDRESS.test(hex) ? hex : null;
 }
 

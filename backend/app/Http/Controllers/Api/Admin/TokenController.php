@@ -20,9 +20,15 @@ class TokenController extends Controller
 
     public function index(Request $request): AnonymousResourceCollection
     {
+        $filters = $request->validate([
+            'merchant_id' => ['nullable', 'uuid'],
+            'is_active' => ['nullable', 'boolean'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
         $tokens = Token::query()
             ->with('merchant')
-            ->when($request->input('merchant_id'), fn ($q, $v) => $q->where('merchant_id', $v))
+            ->when($filters['merchant_id'] ?? null, fn ($q, $v) => $q->where('merchant_id', $v))
             ->when($request->has('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')))
             ->latest()
             ->paginate(min(100, max(1, (int) $request->integer('per_page', 25))));

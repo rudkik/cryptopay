@@ -173,16 +173,44 @@ class InvoiceService
         }
     }
 
+    /**
+     * SPEC §5: only a pending invoice can be cancelled.
+     *
+     * The check runs against the locked row, not the caller's copy, for the
+     * same reason recalculate() does: a merchant retrying a cancel, or a
+     * cancel racing the first incoming transaction, would otherwise both pass a
+     * stale `status === pending` test and emit two `invoice.cancelled`
+     * deliveries — or cancel an invoice that had already started confirming.
+     */
     public function cancel(Invoice $invoice): Invoice
     {
-        if ($invoice->status !== InvoiceStatus::Pending) {
-            throw new InvalidStateException(
-                "Only pending invoices can be cancelled; this one is [{$invoice->status->value}].",
-                ['status' => [$invoice->status->value]],
-            );
-        }
+        DB::transaction(function () use ($invoice) {
+            $locked = Invoice::query()->whereKey($invoice->getKey())->lockForUpdate()->first();
 
-        $invoice->forceFill(['status' => InvoiceStatus::Cancelled->value])->save();
+            if (! $locked) {
+                throw new NotFoundException;
+            }
+
+            $invoice->setRawAttributes($locked->getAttributes(), sync: true);
+
+            if ($invoice->status !== InvoiceStatus::Pending) {
+                throw new InvalidStateException(
+                    "Only pending invoices can be cancelled; this one is [{$invoice->status->value}].",
+                    ['status' => [$invoice->status->value]],
+                );
+            }
+
+            $invoice->forceFill(['status' => InvoiceStatus::Cancelled->value])->save();
+        });
+
+        // Cancelling is the one status change that does not go through
+        // recalculate(), so it has to carry the purchase along itself —
+        // otherwise a cancelled token-sale invoice leaves its token_purchase
+        // stuck on `pending` forever, and `cancelled` (SPEC §4) is a state the
+        // table can never actually reach.
+        if ($invoice->type === InvoiceType::TokenPurchase) {
+            app(TokenPurchaseService::class)->syncWithInvoice($invoice);
+        }
 
         $this->webhooks->dispatchInvoiceEvent(InvoiceStatus::Cancelled->webhookEvent(), $invoice);
 
@@ -201,63 +229,92 @@ class InvoiceService
     /**
      * Recompute received/confirmed totals and the status from the invoice's
      * transactions, persist any change, and emit the matching webhook.
+     *
+     * The whole decision happens under a row lock on the invoice, because the
+     * question "did the status change?" is what gates the webhook, and it can
+     * only be answered against the committed row. Two watcher payloads for the
+     * same invoice routinely arrive at once — two transactions confirming
+     * together, or a confirmation racing the expiry sweep — and each caller
+     * arrives holding an Invoice instance loaded *before* the other one
+     * committed. Without the lock both read `status = confirming`, both compute
+     * `paid`, and the merchant gets two `invoice.paid` deliveries for one
+     * payment. Under the lock the loser re-reads `paid`, sees no transition and
+     * stays quiet.
      */
     public function recalculate(Invoice $invoice, bool $expiring = false): Invoice
     {
-        // Only transactions in the invoice's own currency pay it. A USDC
-        // transfer to a USDT invoice's deposit address is still recorded and
-        // still credited to the merchant's USDC balance (see
-        // TransactionIngestService::credit()), but it must never settle a USDT
-        // invoice — the two are not interchangeable just because they are both
-        // "about a dollar".
-        //
-        // An invoice with no currency has no deposit address either, so nothing
-        // can ever have been sent to it: skip the query rather than let
-        // `where('currency', null)` become `currency is null` and match rows by
-        // accident.
-        $totals = $invoice->currency === null
-            ? collect()
-            : $invoice->transactions()
-                ->where('currency', $invoice->currency)
-                ->selectRaw('status, count(*) as cnt, sum(amount) as total')
-                ->groupBy('status')
-                ->get()
-                ->keyBy(fn ($row) => is_string($row->status) ? $row->status : $row->status->value);
+        $transition = DB::transaction(function () use ($invoice, $expiring) {
+            $locked = Invoice::query()->whereKey($invoice->getKey())->lockForUpdate()->first();
 
-        $confirmed = Money::normalize($totals->get(TransactionStatus::Confirmed->value)?->total ?? 0);
-        $detected = Money::normalize($totals->get(TransactionStatus::Detected->value)?->total ?? 0);
-        $received = Money::add($confirmed, $detected);
+            if (! $locked) {
+                return null;
+            }
 
-        $previous = $invoice->status;
-        $next = $this->resolveStatus($invoice, $confirmed, $received, $expiring);
+            // Adopt the committed state without discarding the caller's loaded
+            // relations (merchant, depositAddress), which the webhook payload
+            // needs and which a refresh() here would only re-query.
+            $invoice->setRawAttributes($locked->getAttributes(), sync: true);
 
-        $changes = [
-            'amount_received' => $received,
-            'amount_confirmed' => $confirmed,
-        ];
+            // Only transactions in the invoice's own currency pay it. A USDC
+            // transfer to a USDT invoice's deposit address is still recorded and
+            // still credited to the merchant's USDC balance (see
+            // TransactionIngestService::credit()), but it must never settle a USDT
+            // invoice — the two are not interchangeable just because they are both
+            // "about a dollar".
+            //
+            // An invoice with no currency has no deposit address either, so nothing
+            // can ever have been sent to it: skip the query rather than let
+            // `where('currency', null)` become `currency is null` and match rows by
+            // accident.
+            $totals = $invoice->currency === null
+                ? collect()
+                : $invoice->transactions()
+                    ->where('currency', $invoice->currency)
+                    ->selectRaw('status, count(*) as cnt, sum(amount) as total')
+                    ->groupBy('status')
+                    ->get()
+                    ->keyBy(fn ($row) => is_string($row->status) ? $row->status : $row->status->value);
 
-        if ($next !== $previous) {
-            $changes['status'] = $next->value;
-        }
+            $confirmed = Money::normalize($totals->get(TransactionStatus::Confirmed->value)?->total ?? 0);
+            $detected = Money::normalize($totals->get(TransactionStatus::Detected->value)?->total ?? 0);
+            $received = Money::add($confirmed, $detected);
 
-        if ($next->isPaid() && $invoice->paid_at === null) {
-            $changes['paid_at'] = now();
-        } elseif (! $next->isPaid() && $invoice->paid_at !== null) {
-            // A reorg took the payment back.
-            $changes['paid_at'] = null;
-        }
+            $previous = $invoice->status;
+            $next = $this->resolveStatus($invoice, $confirmed, $received, $expiring);
 
-        $invoice->forceFill($changes)->save();
+            $changes = [
+                'amount_received' => $received,
+                'amount_confirmed' => $confirmed,
+            ];
 
-        if ($next !== $previous) {
-            // A token purchase follows its invoice. Resolved lazily to keep the
-            // two services free of a circular constructor dependency.
+            if ($next !== $previous) {
+                $changes['status'] = $next->value;
+            }
+
+            if ($next->isPaid() && $invoice->paid_at === null) {
+                $changes['paid_at'] = now();
+            } elseif (! $next->isPaid() && $invoice->paid_at !== null) {
+                // A reorg took the payment back.
+                $changes['paid_at'] = null;
+            }
+
+            $invoice->forceFill($changes)->save();
+
+            return $next === $previous ? null : $next;
+        });
+
+        if ($transition !== null) {
+            // Outside the lock: completing a token purchase takes its own locks
+            // and the webhook dispatch queues a job, neither of which belongs
+            // inside a transaction the whole invoice waits on. Exactly one
+            // caller reaches this branch, because the transition was decided
+            // against the locked row.
             if ($invoice->type === InvoiceType::TokenPurchase) {
                 app(TokenPurchaseService::class)->syncWithInvoice($invoice);
             }
 
-            if ($next->emitsWebhook()) {
-                $this->webhooks->dispatchInvoiceEvent($next->webhookEvent(), $invoice->refresh());
+            if ($transition->emitsWebhook()) {
+                $this->webhooks->dispatchInvoiceEvent($transition->webhookEvent(), $invoice->refresh());
             }
         }
 

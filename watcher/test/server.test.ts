@@ -2,7 +2,7 @@ import { HDNodeWallet } from 'ethers';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ACCOUNT_PATHS, Deriver, xpubsFromMnemonic } from '../src/derivation.js';
 import { buildServer, type ServerDeps } from '../src/http/server.js';
-import { clearSecrets } from '../src/redact.js';
+import { clearSecrets, registerSecret } from '../src/redact.js';
 import { StateStore } from '../src/state/store.js';
 import type { AppConfig } from '../src/config.js';
 import type { Logger } from '../src/logger.js';
@@ -83,6 +83,103 @@ function buildDeps(overrides: Partial<ServerDeps> = {}): { deps: ServerDeps; spy
 }
 
 const AUTH_HEADERS = { 'x-internal-token': 'test-internal-token-0123456789', 'content-type': 'application/json' };
+
+describe('конверты ошибок HTTP', () => {
+  const routes: [string, string][] = [
+    ['POST', '/health'],
+    ['GET', '/addresses/derive'],
+    ['GET', '/addresses/derive-batch'],
+    ['DELETE', '/rescan'],
+    ['GET', '/rescan'],
+    ['GET', '/nope'],
+  ];
+
+  for (const [method, url] of routes) {
+    it(`REGRESSION: ${method} ${url} -> 404 not_found даже с Content-Type: application/json`, async () => {
+      // Раньше пустое тело при json content-type падало в парсере ДО маршрутизации,
+      // и «неизвестный метод» отвечал 422 «Body cannot be empty» вместо 404.
+      const { deps } = buildDeps();
+      const app = buildServer(deps);
+      const res = await app.inject({
+        method: method as 'GET',
+        url,
+        headers: { 'content-type': 'application/json' },
+      });
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toEqual({ error: { code: 'not_found', message: 'Endpoint not found.' } });
+      await app.close();
+    });
+  }
+
+  it('запрос без тела к существующему эндпоинту даёт validation_error с details', async () => {
+    const { deps } = buildDeps();
+    const app = buildServer(deps);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/addresses/derive',
+      headers: AUTH_HEADERS,
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe('validation_error');
+    expect(res.json().error.details).toHaveProperty('network');
+    await app.close();
+  });
+
+  it('битый JSON -> 422 validation_error', async () => {
+    const { deps } = buildDeps();
+    const app = buildServer(deps);
+    const res = await app.inject({ method: 'POST', url: '/rescan', headers: AUTH_HEADERS, payload: '{oops' });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe('validation_error');
+    await app.close();
+  });
+
+  it('без токена -> 401 unauthenticated на всех защищённых маршрутах', async () => {
+    const { deps } = buildDeps();
+    const app = buildServer(deps);
+    for (const url of ['/addresses/derive', '/addresses/derive-batch', '/rescan']) {
+      const res = await app.inject({
+        method: 'POST',
+        url,
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({ network: 'ethereum', index: 0, count: 1, from_block: 1 }),
+      });
+      expect(res.statusCode, url).toBe(401);
+      expect(res.json().error.code).toBe('unauthenticated');
+    }
+    await app.close();
+  });
+
+  it('/health не требует авторизации и не отдаёт ни xpub, ни RPC-url, ни токен', async () => {
+    const { deps } = buildDeps();
+    const manager = {
+      healthSnapshot: () => [
+        {
+          code: 'ethereum' as const,
+          enabled: true,
+          headBlock: 100,
+          lastScannedBlock: 98,
+          lag: 2,
+          pendingTxs: 1,
+          lastError:
+            'could not detect network (requestUrl="https://eth.example/SECRETKEY?apikey=abc") ' +
+            'token=test-internal-token-0123456789 ' +
+            'xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz',
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    };
+    registerSecret('test-internal-token-0123456789');
+    const app = buildServer({ ...deps, manager: manager as never });
+    const res = await app.inject({ method: 'GET', url: '/health' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toContain('SECRETKEY');
+    expect(res.body).not.toContain('test-internal-token-0123456789');
+    expect(res.body).not.toContain('xpub6CUGRUonZSQ4');
+    expect(res.json().networks[0].lastError).toContain('[redacted-xpub]');
+    await app.close();
+  });
+});
 
 describe('POST /addresses/derive with body xpub', () => {
   beforeEach(() => clearSecrets());

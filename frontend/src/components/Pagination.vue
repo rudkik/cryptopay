@@ -12,7 +12,9 @@ const from = computed(() => {
 })
 const to = computed(() => {
   if (props.meta.total === 0) return 0
-  return props.meta.to ?? Math.min(props.meta.current_page * props.meta.per_page, props.meta.total)
+  const end = props.meta.to ?? Math.min(props.meta.current_page * props.meta.per_page, props.meta.total)
+  // Never render an inverted range while a stale page snaps back into bounds.
+  return Math.max(end, from.value)
 })
 
 /** Window of page numbers with ellipsis markers (0 = gap). */

@@ -83,6 +83,15 @@ class WalletController extends Controller
         $user = $request->user();
         $issuedBefore = $this->addressCounts();
 
+        // Re-saving the key that is already stored (an operator changing only
+        // the label, or clicking Save twice) changes nothing about where the
+        // money goes, so the "addresses were issued from the previous key"
+        // warning would be a false alarm — and the one place that warning has
+        // to be believed is when it is real.
+        $unchanged = collect($targets)->every(
+            fn (string $code) => $this->wallets->wallet($code)->xpub === $xpub
+        );
+
         $this->wallets->store($targets, $xpub, $label, $user instanceof User ? $user : null);
 
         $this->audit->log('wallet.xpub_updated', null, [
@@ -93,7 +102,9 @@ class WalletController extends Controller
             'label' => $label,
         ]);
 
-        $reissued = array_sum(array_map(fn (string $code) => $issuedBefore[$code] ?? 0, $targets));
+        $reissued = $unchanged
+            ? 0
+            : array_sum(array_map(fn (string $code) => $issuedBefore[$code] ?? 0, $targets));
 
         $item = $this->item($model, $this->addressCounts(), $this->receivedByNetwork());
 

@@ -84,10 +84,15 @@ function harness(opts: {
     },
   } as unknown as BackendClient;
 
+  // head изменяемый: трекер пересчитывает подтверждения ровно один раз на новый
+  // head, поэтому «второй круг проверки» в тесте требует сдвинуть его.
+  let head = opts.head;
+  let blocks = opts.blocks;
+
   const client = {
-    getNowBlock: async () => block(opts.head),
-    getSolidityNowBlock: async () => block(opts.solidityHead ?? opts.head),
-    getBlockByLimit: async () => opts.blocks,
+    getNowBlock: async () => block(head),
+    getSolidityNowBlock: async () => block(opts.solidityHead ?? head),
+    getBlockByLimit: async () => blocks,
     getTransactionInfoById: async () => opts.info ?? null,
   } as unknown as TronClient;
 
@@ -104,7 +109,16 @@ function harness(opts: {
     silentLog,
   );
 
-  return { scanner, reported, state: () => stored };
+  return {
+    scanner,
+    reported,
+    state: () => stored,
+    /** Сдвинуть head и (по умолчанию) перестать отдавать блоки — как после догона. */
+    advanceHead: (next: number, nextBlocks: TronBlock[] = []) => {
+      head = next;
+      blocks = nextBlocks;
+    },
+  };
 }
 
 describe('TronScanner block cursor', () => {
@@ -163,6 +177,10 @@ describe('TronScanner confirmation gate', () => {
       info: { id: TX_ID, blockNumber: 101, result: 'FAILED', receipt: { result: 'SUCCESS' } },
     });
     await h.scanner.tick();
+    // Первый отрицательный ответ не отменяет платёж (orphanStrikes = 2).
+    expect(h.reported.map((t) => t.status)).toEqual(['detected']);
+    h.advanceHead(102);
+    await h.scanner.tick();
     expect(h.reported.map((t) => t.status)).toEqual(['detected', 'orphaned']);
   });
 
@@ -175,7 +193,30 @@ describe('TronScanner confirmation gate', () => {
       info: { id: TX_ID, blockNumber: 101, receipt: { result: 'REVERT' } },
     });
     await h.scanner.tick();
+    expect(h.reported.map((t) => t.status)).toEqual(['detected']);
+    h.advanceHead(102);
+    await h.scanner.tick();
     expect(h.reported.map((t) => t.status)).toEqual(['detected', 'orphaned']);
+  });
+
+  it('REGRESSION: пустой ответ gettransactioninfobyid не отменяет платёж', async () => {
+    // TronGrid отвечает {} на транзакцию, которую ещё не проиндексировал.
+    // Раньше это мгновенно давало orphaned — отмена реально пришедшего депозита.
+    const h = harness({
+      head: 101,
+      blocks: detectedIn(101),
+      lastScanned: 100,
+      confirmations: 1,
+      info: null,
+    });
+    await h.scanner.tick();
+    expect(h.reported.map((t) => t.status)).toEqual(['detected']);
+    expect(h.scanner.pendingCount()).toBe(1);
+
+    h.advanceHead(102);
+    await h.scanner.tick();
+    expect(h.reported.map((t) => t.status)).toEqual(['detected']);
+    expect(h.scanner.pendingCount()).toBe(1);
   });
 
   it('never confirms on a receipt belonging to another transaction', async () => {

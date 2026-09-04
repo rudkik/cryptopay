@@ -19,8 +19,16 @@ class MerchantController extends Controller
 
     public function index(Request $request): AnonymousResourceCollection
     {
+        // `q` arrived unvalidated: `?q[]=x` reached Request::string() and threw
+        // "Array to string conversion" -> 500 instead of a 422.
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:255'],
+            'is_active' => ['nullable', 'boolean'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
         $merchants = Merchant::query()
-            ->when($request->string('q')->toString(), fn ($q, $v) => $q->where(fn ($w) => $w
+            ->when($filters['q'] ?? null, fn ($q, $v) => $q->where(fn ($w) => $w
                 ->where('name', 'like', "%{$v}%")
                 ->orWhere('email', 'like', "%{$v}%")))
             ->when($request->has('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')))
@@ -81,7 +89,9 @@ class MerchantController extends Controller
         // Shown once so it can be copied into the merchant's integration.
         return response()->json([
             'webhook_secret' => $secret,
-            'merchant' => (new MerchantResource($model))->toArray(request()),
+            // resolve() filters the unloaded balances/api_keys relations out;
+            // toArray() leaked both as `{}` (see MeController).
+            'merchant' => (new MerchantResource($model))->resolve(request()),
         ]);
     }
 }

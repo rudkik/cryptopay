@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -33,9 +34,28 @@ return new class extends Migration
     /**
      * Reverting only works while no unselected invoice exists; rows created
      * through the new flow would violate the restored NOT NULL constraints.
+     *
+     * That is checked up front rather than left to Postgres, which would
+     * otherwise raise an opaque 23502 *after* the first couple of columns had
+     * already been altered — a half-reverted table plus an error message that
+     * says nothing about why.
      */
     public function down(): void
     {
+        $unselected = DB::table('invoices')
+            ->whereNull('currency')
+            ->orWhereNull('network_code')
+            ->orWhereNull('deposit_address_id')
+            ->count();
+
+        if ($unselected > 0) {
+            throw new RuntimeException(
+                "Cannot roll back: {$unselected} invoice(s) have no currency/network/deposit address yet "
+                .'(SPEC §6.3 deferred selection). Restoring NOT NULL would reject them. '
+                .'Cancel or delete those invoices first, then roll back.'
+            );
+        }
+
         Schema::table('token_purchases', function (Blueprint $table) {
             $table->string('currency', 16)->nullable(false)->change();
         });

@@ -22,12 +22,19 @@ import { merchantsApi } from '@/api/merchants'
 import { invoicesApi } from '@/api/invoices'
 import { isApiError } from '@/api/http'
 import type { ApiKey, Invoice, Merchant, PaginationMeta } from '@/api/types'
+import { useAuthStore } from '@/stores/auth'
 import { fieldErrors, reportError } from '@/composables/useErrorHandler'
 import { formatAmount, formatDate, formatDateTime, formatRelative, truncateMiddle } from '@/utils/format'
 import { toast } from '@/utils/toast'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
+const auth = useAuthStore()
+
+/** Every write on this screen is admin-only server-side (403 for a viewer). */
+const adminOnlyTitle = computed(() =>
+  auth.isAdmin ? undefined : 'Only an admin can change a service.',
+)
 
 const service = ref<Merchant | null>(null)
 const loading = ref(true)
@@ -301,6 +308,8 @@ onMounted(async () => {
           <p class="mt-0.5 text-xs text-muted">Webhook endpoint and account status.</p>
 
           <form class="mt-4 space-y-4" novalidate @submit.prevent="saveSettings">
+            <!-- Read-only for viewers: the API rejects their writes with 403. -->
+            <fieldset class="space-y-4" :disabled="!auth.isAdmin" :title="adminOnlyTitle">
             <div>
               <label for="s-name" class="label">Name</label>
               <input
@@ -345,16 +354,28 @@ onMounted(async () => {
               <span class="text-sm">Active</span>
             </label>
 
-            <div class="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-              <button type="submit" class="btn-primary btn-sm" :disabled="savingSettings || !settingsDirty">
+            </fieldset>
+
+            <div class="flex flex-wrap items-center gap-2 border-t border-border pt-4" :title="adminOnlyTitle">
+              <button
+                type="submit"
+                class="btn-primary btn-sm"
+                :disabled="!auth.isAdmin || savingSettings || !settingsDirty"
+              >
                 <Spinner v-if="savingSettings" :size="13" />
                 <Save v-else :size="14" aria-hidden="true" />
                 Save changes
               </button>
-              <button type="button" class="btn-secondary btn-sm" @click="rotateOpen = true">
+              <button
+                type="button"
+                class="btn-secondary btn-sm"
+                :disabled="!auth.isAdmin"
+                @click="rotateOpen = true"
+              >
                 <RotateCw :size="14" aria-hidden="true" />
                 Rotate webhook secret
               </button>
+              <p v-if="!auth.isAdmin" class="text-xs text-muted">Read-only — admins can edit.</p>
             </div>
           </form>
 
@@ -392,7 +413,13 @@ onMounted(async () => {
               Keys are shown once at creation and stored as a SHA-256 hash.
             </p>
           </div>
-          <button type="button" class="btn-primary btn-sm" @click="keyModalOpen = true">
+          <button
+            type="button"
+            class="btn-primary btn-sm"
+            :disabled="!auth.isAdmin"
+            :title="adminOnlyTitle"
+            @click="keyModalOpen = true"
+          >
             <Plus :size="14" aria-hidden="true" />
             New key
           </button>
@@ -418,7 +445,7 @@ onMounted(async () => {
           </template>
           <template #cell-actions="{ row }">
             <button
-              v-if="!row.revoked_at"
+              v-if="!row.revoked_at && auth.isAdmin"
               type="button"
               class="btn-ghost btn-sm hover:text-danger"
               :aria-label="`Revoke key ${row.name}`"
@@ -435,7 +462,13 @@ onMounted(async () => {
               description="Create a key so this service can call the v1 API."
               compact
             >
-              <button type="button" class="btn-primary btn-sm" @click="keyModalOpen = true">
+              <button
+            type="button"
+            class="btn-primary btn-sm"
+            :disabled="!auth.isAdmin"
+            :title="adminOnlyTitle"
+            @click="keyModalOpen = true"
+          >
                 <Plus :size="14" aria-hidden="true" />
                 New key
               </button>

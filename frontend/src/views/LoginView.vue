@@ -36,11 +36,17 @@ async function submit(): Promise<void> {
     await auth.login(email.value.trim(), password.value)
     await router.replace(redirect.value)
   } catch (error) {
-    errors.value = fieldErrors(error)
+    const fields = fieldErrors(error)
+    errors.value = fields
+    // With a field message present the banner would only repeat Laravel's
+    // "The given data was invalid." — which says nothing, and buries the real
+    // reason ("This account is disabled.") in small print underneath.
     formError.value =
       isApiError(error) && error.status === 401
         ? 'Incorrect email or password.'
-        : errorMessage(error, 'Sign-in failed. Please try again.')
+        : Object.keys(fields).length > 0
+          ? ''
+          : errorMessage(error, 'Sign-in failed. Please try again.')
   } finally {
     submitting.value = false
   }

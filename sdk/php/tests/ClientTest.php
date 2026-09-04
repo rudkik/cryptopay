@@ -473,7 +473,6 @@ final class ClientTest extends TestCase
             'underpayment_tolerance' => '0.01',
             'created_at' => '2026-01-01T00:00:00+00:00',
             'balances' => [],
-            'api_keys' => [],
             'webhook' => [
                 'url' => 'https://acme.test/hook',
                 'configured' => true,

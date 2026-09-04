@@ -20,7 +20,13 @@ class MeController extends Controller
         $apiKey = $request->attributes->get('api_key');
 
         return response()->json([
-            'data' => (new MerchantResource($merchant->load('balances')))->toArray($request) + [
+            // resolve(), not toArray(): toArray() skips JsonResource's filter
+            // pass, so the `api_keys` whenLoaded() — this endpoint never loads
+            // that relation — survived as a MissingValue and serialised into
+            // the response as an empty object. SPEC §6.1 wants the merchant
+            // plus webhook settings here, so the key is meant to be absent, not
+            // present-and-empty.
+            'data' => (new MerchantResource($merchant->load('balances')))->resolve($request) + [
                 'webhook' => [
                     'url' => $merchant->webhook_url,
                     'configured' => filled($merchant->webhook_url),

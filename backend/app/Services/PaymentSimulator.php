@@ -85,6 +85,25 @@ class PaymentSimulator
                 : 'TSimulated'.Str::upper(Str::random(24));
         }
 
+        // `amount` and `amount_raw` have to be the same number, and the two
+        // conversions disagree on their own: toBaseUnits() truncates while
+        // format() rounds half-up, so an amount with more precision than the
+        // token carries (1.9999995 on a 6-decimal USDT) produced the pair
+        // "2.000000" / 1999999 — a mismatch StoreTransactionRequest rejects
+        // outright when the watcher sends it, and which here silently stored a
+        // transaction whose human amount was not its on-chain amount. Quantise
+        // once to base units and derive the human amount back from that, so
+        // there is only one number.
+        $amountRaw = Money::toBaseUnits($amount, $decimals);
+
+        if (bccomp($amountRaw, '0', 0) <= 0) {
+            throw new InvalidStateException(
+                "The amount is below the smallest unit {$invoice->currency} can settle on [{$invoice->network_code}]."
+            );
+        }
+
+        $amount = Money::fromBaseUnits($amountRaw, $decimals);
+
         $payload = [
             'network' => $invoice->network_code,
             'tx_hash' => $txHash,
@@ -93,7 +112,7 @@ class PaymentSimulator
             'symbol' => $invoice->currency,
             'from_address' => $fromAddress,
             'to_address' => $invoice->depositAddress->address,
-            'amount_raw' => Money::toBaseUnits($amount, $decimals),
+            'amount_raw' => $amountRaw,
             'amount' => Money::format($amount, $decimals),
             'block_number' => $blockNumber,
             'block_hash' => $blockHash,

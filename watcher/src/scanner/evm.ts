@@ -12,6 +12,16 @@ import type { WatchAddressSet } from './addresses.js';
 
 const ADDRESS_CHUNK = 500;
 
+/**
+ * Ограничение скорости провайдера. Проверяется ПЕРЕД RANGE_ERROR: формулировки
+ * пересекаются («rate limit exceeded», «too many requests»), и раньше 429 уезжал
+ * в ветку «ужать батч». Последствия были неприятные: батч гарантированно
+ * съезжал до 1 блока, а ошибка не попадала ни в /health, ни в heartbeat
+ * (её затирал state.ok() в конце того же тика) и не включала backoff в runLoop —
+ * то есть watcher продолжал долбить залимиченный RPC, молча считаясь здоровым.
+ */
+const RATE_LIMIT_ERROR = /rate limit|rate.?limited|too many requests|429|quota|throttl/i;
+
 /** Признаки того, что провайдер не переварил диапазон блоков/объём логов. */
 const RANGE_ERROR = /range|too large|too many|exceed|limit|more than .* results|query timeout|10000|block range/i;
 const BEYOND_HEAD_ERROR = /beyond current head|block not found|header not found|unknown block/i;
@@ -132,8 +142,25 @@ export class EvmScanner implements Scanner {
       );
       throw err;
     }
-    if (!receipt) return 'orphaned';
+    // Пустой receipt — НЕ приговор. Публичные RPC балансируются между нодами:
+    // нода, которая ещё не догнала цепочку (или обслуживает другую ветку),
+    // отдаёт null для совершенно живой транзакции, которую мы сами только что
+    // нашли через getLogs. Считать это orphaned значит отменить реально
+    // пришедший платёж. Отдаём 'unknown' — трекер подождёт следующий head и
+    // сдастся только после maxVerifyAttempts безрезультатных проверок.
+    if (!receipt) {
+      this.log.warn(
+        { network: this.network, txHash: tx.tx_hash, block: tx.block_number },
+        'receipt not available yet, confirmation deferred',
+      );
+      return 'unknown';
+    }
+    // Ревертнувшаяся транзакция — приговор окончательный: лога Transfer в такой
+    // транзакции быть не может, значит наш лог пришёл из отменённой ветки.
     if (receipt.status !== 1) return 'orphaned';
+    // Несовпадение blockHash = транзакция уехала в другую ветку. Трекер требует
+    // повторения приговора (orphanStrikes), чтобы одна отставшая нода не
+    // отменила платёж в одиночку.
     if (receipt.blockHash.toLowerCase() !== tx.block_hash.toLowerCase()) return 'orphaned';
     return 'confirmed';
   }
@@ -277,6 +304,9 @@ export class EvmScanner implements Scanner {
 
   private shrinkOnRangeError(err: unknown): boolean {
     const message = err instanceof Error ? err.message : String(err);
+    // 429 лечится ожиданием, а не меньшим окном: отдаём ошибку наверх, чтобы
+    // tick() её зафиксировал, а runLoop включил экспоненциальный backoff.
+    if (RATE_LIMIT_ERROR.test(message)) return false;
     if (!RANGE_ERROR.test(message) || this.batchBlocks <= 1) return false;
     this.batchBlocks = Math.max(1, Math.floor(this.batchBlocks / 2));
     this.state.fail(err);

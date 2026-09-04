@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plug, Plus } from 'lucide-vue-next'
 import DataTable from '@/components/DataTable.vue'
@@ -15,12 +15,19 @@ import type { Column } from '@/components/table'
 // a `merchant` on the wire — one connected project with its own API keys.
 import { merchantsApi, type MerchantPayload } from '@/api/merchants'
 import type { Merchant } from '@/api/types'
+import { useAuthStore } from '@/stores/auth'
 import { usePaginatedList } from '@/composables/usePaginatedList'
 import { fieldErrors, reportError } from '@/composables/useErrorHandler'
 import { formatDate, truncateMiddle } from '@/utils/format'
 import { toast } from '@/utils/toast'
 
 const router = useRouter()
+const auth = useAuthStore()
+
+/** Creating a service is admin-only server-side; don't offer it to a viewer. */
+const adminOnlyTitle = computed(() =>
+  auth.isAdmin ? undefined : 'Only an admin can create a service.',
+)
 
 const { filters, items, meta, loading, hasFilters, load, setPage, resetFilters } = usePaginatedList<
   Merchant,
@@ -88,7 +95,13 @@ onMounted(() => void load())
       description="Your connected projects — each one gets API keys, a webhook URL and its own balances."
     >
       <template #actions>
-        <button type="button" class="btn-primary" @click="openCreate">
+        <button
+          type="button"
+          class="btn-primary"
+          :disabled="!auth.isAdmin"
+          :title="adminOnlyTitle"
+          @click="openCreate"
+        >
           <Plus :size="15" aria-hidden="true" />
           New service
         </button>
@@ -137,7 +150,12 @@ onMounted(() => void load())
             title="No services yet"
             description="Add a service to issue API keys and start accepting payments."
           >
-            <button type="button" class="btn-primary" @click="openCreate">
+            <button
+              v-if="auth.isAdmin"
+              type="button"
+              class="btn-primary"
+              @click="openCreate"
+            >
               <Plus :size="15" aria-hidden="true" />
               New service
             </button>

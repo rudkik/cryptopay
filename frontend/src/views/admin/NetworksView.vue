@@ -11,12 +11,23 @@ import Spinner from '@/components/Spinner.vue'
 import { networksApi } from '@/api/networks'
 import { walletsApi } from '@/api/wallets'
 import type { Currency, Network, NetworkCode, TokenContract, WalletItem } from '@/api/types'
+import { useAuthStore } from '@/stores/auth'
 import { useNetworksStore } from '@/stores/networks'
 import { fieldErrors, reportError } from '@/composables/useErrorHandler'
 import { formatRelative } from '@/utils/format'
 import { toast } from '@/utils/toast'
 
+const auth = useAuthStore()
 const store = useNetworksStore()
+
+/**
+ * Chain configuration is admin-only server-side (every write answers 403 for a
+ * viewer). Reflect that in the UI instead of letting a read-only operator fill
+ * in thirty fields and lose the lot to a toast.
+ */
+const adminOnlyTitle = computed(() =>
+  auth.isAdmin ? undefined : 'Only an admin can change network settings.',
+)
 
 const loading = ref(true)
 const refreshing = ref(false)
@@ -136,14 +147,41 @@ async function saveNetwork(network: Network): Promise<void> {
   }
 }
 
+/**
+ * A contract address is what the watchers match Transfer logs against, so a
+ * typo silently stops every deposit on that token from ever being seen. The
+ * API stores whatever string it is given, so the shape is checked here before
+ * the write goes out: EVM is 0x + 40 hex, Tron is base58 starting with T.
+ */
+const CONTRACT_SHAPE: Record<string, { re: RegExp; hint: string }> = {
+  ethereum: { re: /^0x[0-9a-fA-F]{40}$/, hint: 'Expected an EVM address: 0x followed by 40 hex characters.' },
+  bsc: { re: /^0x[0-9a-fA-F]{40}$/, hint: 'Expected an EVM address: 0x followed by 40 hex characters.' },
+  tron: { re: /^T[1-9A-HJ-NP-Za-km-z]{33}$/, hint: 'Expected a Tron address: T followed by 33 base58 characters.' },
+}
+
+function contractError(code: string, address: string): string | null {
+  const shape = CONTRACT_SHAPE[code]
+  if (!shape || !address) return null
+  return shape.re.test(address) ? null : shape.hint
+}
+
 async function saveToken(network: Network, token: TokenContract): Promise<void> {
   const key = tokenKey(network.code, token.symbol)
   const draft = tokenDrafts[key]
   if (!draft) return
+
+  const address = draft.contract_address.trim()
+  const invalid = contractError(network.code, address)
+  errors.value[key] = invalid ? { contract_address: invalid } : {}
+  if (invalid) {
+    toast.error('Check the contract address', invalid)
+    return
+  }
+
   savingToken.value = key
   try {
     await networksApi.updateToken(network.code as NetworkCode, token.symbol as Currency, {
-      contract_address: draft.contract_address.trim(),
+      contract_address: address,
       decimals: Number(draft.decimals),
       is_enabled: draft.is_enabled,
     })
@@ -250,6 +288,8 @@ onMounted(() => {
             novalidate
             @submit.prevent="saveNetwork(network)"
           >
+            <!-- A viewer may read the configuration but not edit it (403 server-side). -->
+            <fieldset class="space-y-4" :disabled="!auth.isAdmin" :title="adminOnlyTitle">
             <label class="flex cursor-pointer items-center justify-between gap-4">
               <span class="min-w-0">
                 <span class="block text-sm font-medium">Enabled</span>
@@ -311,15 +351,19 @@ onMounted(() => {
               />
             </div>
 
+            </fieldset>
+
             <button
               type="submit"
               class="btn-primary btn-sm"
-              :disabled="savingNetwork === network.code || !isNetworkDirty(network)"
+              :disabled="!auth.isAdmin || savingNetwork === network.code || !isNetworkDirty(network)"
+              :title="adminOnlyTitle"
             >
               <Spinner v-if="savingNetwork === network.code" :size="13" />
               <Save v-else :size="14" aria-hidden="true" />
               Save network
             </button>
+            <p v-if="!auth.isAdmin" class="text-xs text-muted">Read-only — admins can edit.</p>
           </form>
 
           <!-- Token contracts -->
@@ -333,6 +377,7 @@ onMounted(() => {
                 novalidate
                 @submit.prevent="saveToken(network, token)"
               >
+                <fieldset :disabled="!auth.isAdmin" :title="adminOnlyTitle">
                 <div class="flex items-center justify-between gap-3">
                   <span class="inline-flex items-center gap-2 text-sm font-semibold">
                     <CoinLogo :currency="token.symbol" :size="26" />
@@ -360,7 +405,15 @@ onMounted(() => {
                       v-model="tokenDrafts[tokenKey(network.code, token.symbol)]!.contract_address"
                       type="text"
                       class="input mono text-xs"
+                      :class="errors[tokenKey(network.code, token.symbol)]?.contract_address ? 'input-error' : ''"
+                      :aria-invalid="Boolean(errors[tokenKey(network.code, token.symbol)]?.contract_address)"
                     />
+                    <p
+                      v-if="errors[tokenKey(network.code, token.symbol)]?.contract_address"
+                      class="error-text"
+                    >
+                      {{ errors[tokenKey(network.code, token.symbol)]?.contract_address }}
+                    </p>
                   </div>
                   <div>
                     <label :for="`d-${network.code}-${token.symbol}`" class="label">Decimals</label>
@@ -375,10 +428,13 @@ onMounted(() => {
                   </div>
                 </div>
 
+                </fieldset>
+
                 <button
                   type="submit"
                   class="btn-secondary btn-sm mt-3"
-                  :disabled="savingToken === tokenKey(network.code, token.symbol) || !isTokenDirty(network, token)"
+                  :disabled="!auth.isAdmin || savingToken === tokenKey(network.code, token.symbol) || !isTokenDirty(network, token)"
+                  :title="adminOnlyTitle"
                 >
                   <Spinner v-if="savingToken === tokenKey(network.code, token.symbol)" :size="13" />
                   <Save v-else :size="13" aria-hidden="true" />

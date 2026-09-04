@@ -425,13 +425,28 @@ onBeforeUnmount(() => {
 .swagger-shell :deep(.swagger-ui .info .title small) {
   top: 0;
 }
-.swagger-shell :deep(.swagger-ui .info pre),
+/*
+ * `.version` is excluded on purpose: swagger-ui renders the "1.0.0" / "OAS 3.1"
+ * stamps as a <pre class="version"> with white ink inside a coloured <small>
+ * pill. Repainting every .info pre light made that text white-on-cream
+ * (1.15:1 — invisible) and the padding inflated the pill to 45px tall.
+ */
+.swagger-shell :deep(.swagger-ui .info pre:not(.version)),
 .swagger-shell :deep(.swagger-ui .markdown pre),
 .swagger-shell :deep(.swagger-ui .renderedMarkdown pre) {
   padding: 12px 14px;
   border-radius: 8px;
   background: var(--cp-surface-2);
   white-space: pre-wrap;
+}
+
+.swagger-shell :deep(.swagger-ui .info .title pre.version) {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  /* Inherit the stamp's dark ink: swagger-ui's own white sits at 2.2:1 on its
+     lime "OAS 3.1" pill, which is below AA even for the vendor default. */
+  color: inherit;
 }
 .swagger-shell :deep(.swagger-ui .scheme-container) {
   margin: 0 0 20px;

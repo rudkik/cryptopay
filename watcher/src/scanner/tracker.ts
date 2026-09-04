@@ -6,6 +6,12 @@ export type VerifyResult = 'confirmed' | 'orphaned' | 'unknown';
 export interface PendingTx extends TransactionReport {
   /** Сколько раз подряд verify() вернул 'unknown' (защита от вечного зависания). */
   verifyAttempts?: number;
+  /**
+   * Сколько раз verify() вернул 'orphaned'. Одного раза мало: публичные RPC
+   * балансируются между нодами, и отставшая нода отдаёт пустой receipt или
+   * receipt из другой ветки для совершенно живой транзакции.
+   */
+  orphanStrikes?: number;
 }
 
 export interface TrackerOptions {
@@ -17,6 +23,11 @@ export interface TrackerOptions {
   report: (txs: TransactionReport[]) => Promise<void>;
   /** После стольких неудачных verify подряд считаем транзакцию orphaned. */
   maxVerifyAttempts?: number;
+  /**
+   * Сколько раз подряд verify() должен сказать 'orphaned', прежде чем мы
+   * действительно сообщим backend'у об отмене зачисления (см. PendingTx.orphanStrikes).
+   */
+  orphanStrikes?: number;
   onChange?: () => void;
 }
 
@@ -40,6 +51,7 @@ export class ConfirmationTracker {
   constructor(options: TrackerOptions) {
     this.opts = {
       maxVerifyAttempts: 20,
+      orphanStrikes: 2,
       ...options,
     } as Required<Omit<TrackerOptions, 'onChange'>> & { onChange?: () => void };
   }
@@ -75,12 +87,12 @@ export class ConfirmationTracker {
     const key = txKey(tx);
     const existing = this.pending.get(key);
     if (!existing) {
-      this.pending.set(key, { ...tx, status: 'detected', verifyAttempts: 0 });
+      this.pending.set(key, { ...tx, status: 'detected', verifyAttempts: 0, orphanStrikes: 0 });
       this.opts.onChange?.();
       return true;
     }
     if (existing.block_hash !== tx.block_hash || existing.block_number !== tx.block_number) {
-      this.pending.set(key, { ...tx, status: 'detected', verifyAttempts: 0 });
+      this.pending.set(key, { ...tx, status: 'detected', verifyAttempts: 0, orphanStrikes: 0 });
       this.opts.onChange?.();
       return true;
     }
@@ -103,7 +115,11 @@ export class ConfirmationTracker {
     this.pending.clear();
     for (const tx of txs ?? []) {
       if (tx && typeof tx.tx_hash === 'string') {
-        this.pending.set(txKey(tx), { ...tx, verifyAttempts: tx.verifyAttempts ?? 0 });
+        this.pending.set(txKey(tx), {
+          ...tx,
+          verifyAttempts: tx.verifyAttempts ?? 0,
+          orphanStrikes: tx.orphanStrikes ?? 0,
+        });
       }
     }
   }
@@ -112,6 +128,16 @@ export class ConfirmationTracker {
     const raw = head - blockNumber + 1;
     if (raw < 0) return 0;
     return Math.min(raw, this.opts.confirmationsRequired);
+  }
+
+  /**
+   * Публичные RPC балансируются между нодами, поэтому head иногда «едет назад»
+   * (нода B ещё не догнала ноду A). Наружу число подтверждений обязано быть
+   * монотонно неубывающим: иначе backend видит регресс 12 -> 9 -> 12 и на
+   * каждом шаге переписывает уже посчитанное состояние счёта.
+   */
+  private monotonicConfirmations(tx: PendingTx, head: number): number {
+    return Math.max(this.confirmationsFor(tx.block_number, head), tx.confirmations ?? 0);
   }
 
   /**
@@ -125,7 +151,7 @@ export class ConfirmationTracker {
     let changed = false;
 
     for (const tx of this.list()) {
-      const confirmations = this.confirmationsFor(tx.block_number, head);
+      const confirmations = this.monotonicConfirmations(tx, head);
 
       if (confirmations >= this.opts.confirmationsRequired) {
         let result: VerifyResult;
@@ -142,9 +168,22 @@ export class ConfirmationTracker {
           continue;
         }
         if (result === 'orphaned') {
-          this.pending.delete(txKey(tx));
+          // Одного отрицательного ответа мало: пустой/чужой receipt от отставшей
+          // ноды не должен отменять реально пришедший платёж. Ждём подтверждения
+          // приговора на следующем head.
+          const strikes = (tx.orphanStrikes ?? 0) + 1;
+          if (strikes >= this.opts.orphanStrikes) {
+            this.pending.delete(txKey(tx));
+            changed = true;
+            updates.push({ ...stripMeta(tx), confirmations, status: 'orphaned' });
+            continue;
+          }
+          tx.orphanStrikes = strikes;
           changed = true;
-          updates.push({ ...stripMeta(tx), confirmations, status: 'orphaned' });
+          if (tx.confirmations !== confirmations) {
+            tx.confirmations = confirmations;
+            updates.push({ ...stripMeta(tx), confirmations, status: 'detected' });
+          }
           continue;
         }
 
@@ -210,6 +249,6 @@ export class ConfirmationTracker {
 }
 
 function stripMeta(tx: PendingTx): TransactionReport {
-  const { verifyAttempts: _ignored, ...rest } = tx;
+  const { verifyAttempts: _attempts, orphanStrikes: _strikes, ...rest } = tx;
   return rest;
 }

@@ -96,19 +96,20 @@ export interface Transaction {
   network: NetworkCode
   tx_hash: string
   log_index: number
-  from_address: string
+  from_address: string | null
   to_address: string
   currency: Currency
-  contract_address: string
+  contract_address: string | null
   /** Decimal string. */
   amount: string
   /** Raw on-chain integer amount, as a string (respects token decimals). */
-  amount_raw: string
-  block_number: number
+  amount_raw: string | null
+  block_number: number | null
   confirmations: number
   confirmations_required: number
   status: TransactionStatus
-  explorer_url: string
+  /** `null`, если для сети не настроен шаблон обозревателя. */
+  explorer_url: string | null
   credited_at: string | null
   created_at: string
 }
@@ -212,7 +213,6 @@ export interface MerchantAccount {
   underpayment_tolerance: string
   created_at: string
   balances: Balance[]
-  api_keys: ApiKeyInfo[] | Record<string, never>
   webhook: MerchantWebhookInfo
   api_key: ApiKeyInfo | null
 }
@@ -220,7 +220,8 @@ export interface MerchantAccount {
 export interface PaginationLink {
   url: string | null
   label: string
-  page: number | null
+  /** Отсутствует у разделителя «...» в середине длинной пагинации. */
+  page?: number | null
   active: boolean
 }
 

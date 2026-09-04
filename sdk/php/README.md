@@ -268,7 +268,7 @@ $balances = CryptoPay::balances();
 
 ```php
 $result = $client->createTokenPurchase([
-    'token_id' => 'tok_123',
+    'token_id' => '01a05f1b-0a54-71da-a330-bf292b533846', // uuid токена
     'token_amount' => '100',       // либо pay_amount
     'currency' => 'USDT',          // необязателен — но только вместе с network
     'network' => 'tron',           // необязателен — но только вместе с currency
@@ -352,7 +352,7 @@ $invoice = $client->createInvoice($params, $idempotencyKey);
 | `getTokenPurchase(string $id)` | `TokenPurchase` | Покупка токена по id |
 | `listTokenPurchases(array $filters = [])` | `Paginated<TokenPurchase>` | Список покупок токенов (`customer_id`, `status`, `token_id`, `per_page`, `page`) |
 | `customerHoldings(string $customerId)` | `Holding[]` | Остатки токенов у клиента |
-| `me()` | `Merchant` | Профиль мерчанта, балансы, настройки вебхука |
+| `me()` | `Merchant` | Профиль мерчанта, балансы, настройки вебхука и API-ключ текущего запроса (`->apiKey`) |
 
 Вспомогательные классы:
 
@@ -361,6 +361,7 @@ $invoice = $client->createInvoice($params, $idempotencyKey);
 | `CryptoPay\Sdk\Webhook::verify()/::sign()` | Проверка и подпись вебхуков |
 | `CryptoPay\Sdk\WebhookEvent` | Разобранное событие вебхука (`->isPaid()`, `->invoice`, `->tokenPurchase`) |
 | `CryptoPay\Sdk\Dto\Paginated` | Страница результатов (`IteratorAggregate`, `Countable`, `->total()`, `->hasMorePages()`) |
+| `CryptoPay\Sdk\Dto\ApiKey` | Метаданные ключа (`->keyPrefix`, `->lastUsedAt`, `->isRevoked()`); сам ключ API не возвращает никогда |
 | `CryptoPay\Sdk\Http\TransportInterface` | Свой HTTP-транспорт вместо `CurlTransport` (например, для тестов) |
 
 Каждый DTO — `final readonly class` с `::fromArray()` и `->toArray()`

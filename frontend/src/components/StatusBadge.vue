@@ -59,8 +59,15 @@ const pulses = computed(() => props.status === 'confirming' || props.status === 
 </script>
 
 <template>
+  <!--
+    `relative` is load-bearing, not decoration: the `.sr-only` span below is
+    `position:absolute`, so without a positioned ancestor it resolves against
+    the initial containing block. Inside a horizontally scrolled table that
+    placed it at the table's own x-offset, which widened the *document* and
+    gave every narrow viewport a phantom horizontal scrollbar.
+  -->
   <span
-    class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border font-medium"
+    class="relative inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border font-medium"
     :class="[CLASSES[tone].wrap, size === 'sm' ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs']"
   >
     <span class="relative flex h-1.5 w-1.5 shrink-0">

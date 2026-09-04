@@ -11,6 +11,7 @@ use App\Models\LedgerEntry;
 use App\Models\Transaction;
 use App\Support\Money;
 use App\Support\NetworkRegistry;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -61,9 +62,7 @@ class TransactionIngestService
             return ['ok' => true, 'transaction_id' => null, 'invoice_id' => null, 'ignored' => true];
         }
 
-        [$transaction, $shouldRecalculate] = DB::transaction(
-            fn () => $this->persist($payload, $depositAddress)
-        );
+        [$transaction, $shouldRecalculate] = $this->persistIdempotently($payload, $depositAddress);
 
         $invoice = $transaction->invoice_id ? Invoice::find($transaction->invoice_id) : null;
 
@@ -76,6 +75,40 @@ class TransactionIngestService
             'transaction_id' => $transaction->id,
             'invoice_id' => $transaction->invoice_id,
         ];
+    }
+
+    /**
+     * SPEC §6.5: every internal request is idempotent, including two identical
+     * ones in flight at the same time.
+     *
+     * persist() locks the transaction row it is going to update, but there is
+     * no row to lock the first time a hash is seen, so two concurrent payloads
+     * for the same (network, tx_hash, log_index) both fall through to an
+     * INSERT and the loser hits the unique index. The money stays correct — the
+     * constraint is what makes it correct — but the watcher got a 500 for a
+     * request that had, in effect, succeeded, and would keep replaying it.
+     * Retrying re-enters the transaction, this time finds the winner's row, and
+     * takes the normal update path.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array{0: Transaction, 1: bool}
+     */
+    private function persistIdempotently(array $payload, DepositAddress $depositAddress): array
+    {
+        $attempts = 0;
+
+        while (true) {
+            try {
+                return DB::transaction(fn () => $this->persist($payload, $depositAddress));
+            } catch (UniqueConstraintViolationException $e) {
+                // Also covers the balances row: the first payment for a
+                // merchant/currency/network creates it, and two of those can
+                // race exactly the same way.
+                if (++$attempts >= 3) {
+                    throw $e;
+                }
+            }
+        }
     }
 
     /**

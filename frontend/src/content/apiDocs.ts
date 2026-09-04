@@ -101,6 +101,8 @@ export const API_DOCS: DocGroup[] = [
               ['validation_error', '422', 'Request body failed validation — see `details`'],
               ['invalid_state', '409', 'The action conflicts with the current status'],
               ['rate_limited', '429', 'Too many requests for this key'],
+              ['watcher_unavailable', '503', 'The address service is unreachable — retry with the same `Idempotency-Key`'],
+              ['wallet_not_configured', '503', 'No deposit wallet (xpub) is set for that network — an administrator must configure it'],
               ['server_error', '500', 'Unexpected failure — safe to retry'],
             ],
           },
@@ -154,8 +156,8 @@ export const API_DOCS: DocGroup[] = [
   "network": "tron",
   "selection_required": false,
   "amount": "100.000000",
-  "amount_received": "0",
-  "amount_confirmed": "0",
+  "amount_received": "0.000000",
+  "amount_confirmed": "0.000000",
   "address": "TXk8rQSAvPvBBcBjRYaZmzcJdMdaGCNEjm",
   "payment_url": "https://pay.example.com/pay/9b1f0f4c-6f2f-4e1e-9a3c-2f5d1c7c1a10",
   "qr_payload": "TXk8rQSAvPvBBcBjRYaZmzcJdMdaGCNEjm",
@@ -380,11 +382,16 @@ invoice = res.json()`,
             title: 'Paginated response',
             code: `{
   "data": [ { "id": "…", "status": "paid" } ],
+  "links": { "first": "…?page=1", "last": "…?page=4", "prev": null, "next": "…?page=2" },
   "meta": {
     "current_page": 1,
+    "from": 1,
     "last_page": 4,
+    "path": "https://pay.example.com/api/v1/invoices",
     "per_page": 25,
-    "total": 87
+    "to": 25,
+    "total": 87,
+    "links": [ { "url": null, "label": "&laquo; Previous", "page": null, "active": false } ]
   }
 }`,
           },
@@ -432,19 +439,93 @@ invoice = res.json()`,
             title: 'GET /api/v1/balances',
             code: `{
   "data": [
-    { "currency": "USDT", "network": "tron", "available": "1250.50", "pending": "100.00" },
-    { "currency": "USDC", "network": "bsc",  "available": "0",       "pending": "0" }
+    { "currency": "USDT", "network": "tron", "available": "1250.500000", "pending": "100.000000" },
+    { "currency": "USDC", "network": "bsc",  "available": "0.000000000000000000", "pending": "0.000000000000000000" }
   ],
   "totals": {
-    "USDT": { "available": "1250.50", "pending": "100.00" },
-    "USDC": { "available": "0",       "pending": "0" }
+    "USDT": { "available": "1250.500000", "pending": "100.000000" },
+    "USDC": { "available": "0.000000",    "pending": "0.000000" }
   }
 }`,
           },
           {
             kind: 'text',
             value:
-              '`available` counts only confirmed transactions credited to the ledger. `pending` is the sum of detected-but-unconfirmed transfers.',
+              '`available` counts only confirmed transactions credited to the ledger. `pending` is the sum of detected-but-unconfirmed transfers. Each row is formatted to its contract\'s decimals — 6 on Ethereum and Tron, 18 on BSC — while `totals` always uses 6.',
+          },
+        ],
+      },
+      {
+        id: 'merchant-profile',
+        title: 'Your account and deployment config',
+        blocks: [
+          { kind: 'endpoint', method: 'GET', path: '/api/v1/me', summary: 'Merchant profile, balances and webhook settings' },
+          {
+            kind: 'text',
+            value:
+              'Use it as a credentials smoke test: it echoes back the key the request was made with (`api_key`, prefix only), the webhook URL and the list of events CryptoPay will send. The webhook secret is never returned.',
+          },
+          {
+            kind: 'code',
+            language: 'json',
+            title: 'GET /api/v1/me',
+            code: `{
+  "data": {
+    "id": "01a05f1b-0a4e-722d-90e7-4f2a2d977014",
+    "name": "Demo Shop",
+    "email": "demo@example.com",
+    "webhook_url": "https://shop.example.com/webhooks/cryptopay",
+    "is_active": true,
+    "settings": { "underpayment_tolerance": 0.5 },
+    "underpayment_tolerance": "0.500000000000000000",
+    "created_at": "2026-01-01T10:00:00+00:00",
+    "balances": [ { "currency": "USDT", "network": "tron", "available": "593.000000", "pending": "100.000000" } ],
+    "webhook": {
+      "url": "https://shop.example.com/webhooks/cryptopay",
+      "configured": true,
+      "events": ["invoice.confirming", "invoice.paid", "invoice.overpaid",
+                 "invoice.partially_paid", "invoice.expired", "invoice.cancelled",
+                 "token_purchase.completed"],
+      "signature_header": "X-CryptoPay-Signature"
+    },
+    "api_key": {
+      "id": "01a05f1b-0a52-7187-8505-095ea16aa1e8",
+      "merchant_id": "01a05f1b-0a4e-722d-90e7-4f2a2d977014",
+      "name": "Live key",
+      "key_prefix": "cp_live_ab12",
+      "last_used_at": "2026-01-01T12:00:00+00:00",
+      "revoked_at": null,
+      "created_at": "2026-01-01T10:00:00+00:00"
+    }
+  }
+}`,
+          },
+          {
+            kind: 'text',
+            value:
+              '`underpayment_tolerance` is a percentage of the invoice amount, not an absolute figure: a confirmed amount of at least `amount - amount * tolerance / 100` already settles the invoice.',
+          },
+          { kind: 'endpoint', method: 'GET', path: '/api/public/config', summary: 'Optional modules and enabled networks (no auth)' },
+          {
+            kind: 'text',
+            value:
+              'Everything a client needs before it holds any credential. It shares the public 120 req/min per-IP limit and exposes nothing private — the network codes are the same list every payer sees on the checkout.',
+          },
+          {
+            kind: 'code',
+            language: 'json',
+            title: 'GET /api/public/config',
+            code: `{
+  "features": { "token_sale": false },
+  "networks": ["ethereum", "bsc", "tron"]
+}`,
+          },
+          {
+            kind: 'callout',
+            tone: 'info',
+            title: 'Feature flags',
+            value:
+              'While `features.token_sale` is `false`, every token-sale path (`/api/v1/tokens*`, `/api/v1/token-purchases*`, `/api/v1/customers/{id}/holdings`) answers `404 not_found` with "Token sale module is disabled". Payments are unaffected.',
           },
         ],
       },
@@ -988,7 +1069,7 @@ try {
             tone: 'success',
             title: 'Respond fast, work later',
             value:
-              'Return 2xx as soon as the signature checks out and push fulfilment onto a queue. A handler slower than 15 seconds is treated as a failed delivery and retried.',
+              'Return 2xx as soon as the signature checks out and push fulfilment onto a queue. CryptoPay gives each delivery attempt 10 seconds (`WEBHOOK_TIMEOUT`, capped at 10); a slower handler counts as a failed delivery and is retried.',
           },
         ],
       },

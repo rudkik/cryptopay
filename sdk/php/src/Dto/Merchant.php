@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace CryptoPay\Sdk\Dto;
 
 /**
- * The response of GET /api/v1/me: the merchant profile, its balances, and
- * webhook configuration (never the webhook secret itself).
+ * The response of GET /api/v1/me: the merchant profile, its balances, its
+ * webhook configuration (never the webhook secret itself) and the API key the
+ * request was made with.
  */
 final readonly class Merchant
 {
@@ -14,6 +15,7 @@ final readonly class Merchant
      * @param  array<mixed>  $settings
      * @param  Balance[]  $balances
      * @param  array{url: ?string, configured: bool, events: string[], signature_header: ?string}  $webhook
+     * @param  ApiKey|null  $apiKey  The key this request authenticated with.
      * @param  array<mixed>  $raw
      */
     public function __construct(
@@ -27,6 +29,7 @@ final readonly class Merchant
         public ?string $createdAt,
         public array $balances,
         public array $webhook,
+        public ?ApiKey $apiKey = null,
         public array $raw = [],
     ) {
     }
@@ -45,6 +48,7 @@ final readonly class Merchant
 
         $webhook = (array) ($data['webhook'] ?? []);
 
+
         return new self(
             id: (string) ($data['id'] ?? ''),
             name: (string) ($data['name'] ?? ''),
@@ -61,6 +65,7 @@ final readonly class Merchant
                 'events' => (array) ($webhook['events'] ?? []),
                 'signature_header' => $webhook['signature_header'] ?? null,
             ],
+            apiKey: is_array($data['api_key'] ?? null) ? ApiKey::fromArray($data['api_key']) : null,
             raw: $data,
         );
     }

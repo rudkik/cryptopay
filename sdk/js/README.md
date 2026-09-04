@@ -242,7 +242,7 @@ app.post(
 ```ts
 const { purchase, invoice } = await cryptoPay.createTokenPurchase(
   {
-    token_id: 'tok_123',
+    token_id: '01a05f1b-0a54-71da-a330-bf292b533846', // uuid токена
     token_amount: '200',       // либо pay_amount — сумма к оплате, взаимоисключимо с token_amount
     currency: 'USDT',          // необязательно — но только вместе с network
     network: 'tron',           // необязательно — но только вместе с currency
@@ -282,7 +282,7 @@ const holdings = await cryptoPay.customerHoldings('user-42')
 | `getTokenPurchase(id)` | Покупка токенов по id |
 | `listTokenPurchases(filters?)` | Постраничный список покупок токенов |
 | `customerHoldings(customerId)` | Холдинги покупателя (без пагинации) |
-| `me()` | Данные текущего мерчанта, балансы, настройки вебхука |
+| `me()` | Данные текущего мерчанта, балансы, настройки вебхука и API-ключ текущего запроса (`api_key`) |
 
 Плюс функции для работы с вебхуками: `verifyWebhook`, `signWebhook`, `cryptoPayWebhook`
 (см. разделы выше).

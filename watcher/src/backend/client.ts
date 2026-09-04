@@ -116,7 +116,15 @@ export class BackendClient {
       'GET',
       `/api/internal/watch-addresses?${qs.toString()}`,
     );
-    return Array.isArray(raw?.addresses) ? raw.addresses : [];
+    // Раньше здесь возвращался пустой массив: тело без `addresses` (прокси отдал
+    // HTML, backend поменял контракт, обрезанный JSON) молча стирало ВЕСЬ список
+    // отслеживаемых адресов. Сканер при этом считает адреса «загруженными» и
+    // проносится по блокам, помечая их просканированными, — депозиты в этом
+    // окне теряются навсегда. Пустой список допустим только явный.
+    if (!raw || !Array.isArray(raw.addresses)) {
+      throw new BackendError(`malformed /api/internal/watch-addresses response for ${network}`);
+    }
+    return raw.addresses;
   }
 
   async postTransaction(tx: TransactionReport): Promise<void> {

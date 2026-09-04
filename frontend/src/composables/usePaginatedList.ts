@@ -65,8 +65,25 @@ export function usePaginatedList<TItem, TFilters extends Record<string, string>>
       }
       const response = await options.fetcher(params)
       if (current !== requestId) return // a newer request superseded this one
+
+      /*
+       * A shareable `?page=N` can outlive the result set it was made against
+       * (a filter narrows it, rows get deleted). Laravel answers with an empty
+       * page and `from`/`to: null`, which rendered as "Showing 26–23 of 23";
+       * worse, when the set shrinks to a single page the pager hides itself,
+       * so the operator is stranded on an empty table. Snap to the last real
+       * page instead — the retry always lands in range, so it cannot loop.
+       */
+      const nextMeta = response.meta
+      if (nextMeta && nextMeta.last_page >= 1 && page.value > nextMeta.last_page) {
+        page.value = nextMeta.last_page
+        pushQuery()
+        void load()
+        return
+      }
+
       items.value = (response.data ?? []) as TItem[]
-      meta.value = response.meta ?? { ...EMPTY_META, per_page: perPage, total: items.value.length }
+      meta.value = nextMeta ?? { ...EMPTY_META, per_page: perPage, total: items.value.length }
     } catch (error) {
       if (current !== requestId) return
       failed.value = true

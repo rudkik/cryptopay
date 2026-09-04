@@ -109,7 +109,7 @@ class FeatureFlagTest extends TestCase
     }
 
     #[DataProvider('guardedRoutes')]
-    public function test_a_guarded_route_is_404_while_the_module_is_off(string $method, string $uri, string $actor): void
+    public function test_a_guarded_route_is_404_while_the_module_is_off(string $method, string $uri, string $actor, int $status): void
     {
         $this->request($method, $uri, $actor)
             ->assertStatus(404)
