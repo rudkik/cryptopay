@@ -95,6 +95,15 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/admin/DocsView.vue'),
         meta: { title: 'Merchant API docs' },
       },
+      {
+        // Swagger UI over `public/openapi.yaml`. Lazily imported like every
+        // other view, which keeps the ~1.5 MB swagger-ui bundle and its CSS
+        // out of every page that is not this one.
+        path: 'swagger',
+        name: 'swagger',
+        component: () => import('@/views/admin/SwaggerView.vue'),
+        meta: { title: 'Swagger' },
+      },
     ],
   },
   { path: '/', redirect: '/admin' },

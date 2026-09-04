@@ -226,7 +226,8 @@ onMounted(() => void load())
           <AmountDisplay :value="row.amount" :currency="row.currency" size="sm" />
         </template>
         <template #cell-network="{ row }">
-          <NetworkBadge :network="row.network" size="sm" compact />
+          <NetworkBadge v-if="row.network" :network="row.network" size="sm" compact />
+          <span v-else class="text-muted">—</span>
         </template>
         <template #cell-status="{ row }">
           <StatusBadge :status="row.status" size="sm" context="Invoice status" />

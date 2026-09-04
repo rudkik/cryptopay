@@ -49,6 +49,7 @@ final class ClientTest extends TestCase
             'created_at' => '2026-09-02T05:13:56+00:00',
             'transactions' => [],
             'token_purchase' => null,
+            'selection_required' => false,
         ], $overrides);
     }
 
@@ -209,6 +210,110 @@ final class ClientTest extends TestCase
             self::assertSame(409, $e->getHttpStatus());
             self::assertSame('Invoice cannot be cancelled.', $e->getMessage());
         }
+    }
+
+    // 4b. selectInvoiceNetwork hits POST .../invoices/{id}/select and fills the pair in.
+    public function test_select_invoice_network_sends_the_pair_and_hydrates_the_filled_in_invoice(): void
+    {
+        $transport = new FakeTransport();
+        $transport->queue($this->jsonResponse(200, ['data' => $this->invoicePayload([
+            'currency' => 'USDC',
+            'network' => 'bsc',
+            'address' => '0xabc123',
+            'qr_payload' => '0xabc123',
+            'selection_required' => false,
+        ])]));
+
+        $invoice = $this->client($transport)->selectInvoiceNetwork(
+            '01a06089-c3c9-7394-9750-480c130315fd',
+            ['currency' => 'USDC', 'network' => 'bsc']
+        );
+
+        $request = $transport->lastRequest();
+        self::assertNotNull($request);
+        self::assertSame('POST', $request->method);
+        self::assertSame(self::BASE_URL.'/api/v1/invoices/01a06089-c3c9-7394-9750-480c130315fd/select', $request->url);
+        self::assertSame('application/json', $request->headers['Content-Type']);
+        self::assertSame(['currency' => 'USDC', 'network' => 'bsc'], json_decode((string) $request->body, true));
+
+        self::assertSame('USDC', $invoice->currency);
+        self::assertSame('bsc', $invoice->network);
+        self::assertSame('0xabc123', $invoice->address);
+        self::assertFalse($invoice->needsSelection());
+    }
+
+    public function test_select_invoice_network_url_encodes_the_id(): void
+    {
+        $transport = new FakeTransport();
+        $transport->queue($this->jsonResponse(200, ['data' => $this->invoicePayload()]));
+
+        $this->client($transport)->selectInvoiceNetwork('id with space/slash', ['currency' => 'USDT', 'network' => 'tron']);
+
+        $request = $transport->lastRequest();
+        self::assertSame(self::BASE_URL.'/api/v1/invoices/id%20with%20space%2Fslash/select', $request->url);
+    }
+
+    public function test_select_invoice_network_409_maps_to_invalid_state_api_exception(): void
+    {
+        $transport = new FakeTransport();
+        $transport->queue($this->jsonResponse(409, [
+            'error' => ['code' => 'invalid_state', 'message' => 'Currency and network are already selected.', 'details' => []],
+        ]));
+
+        try {
+            $this->client($transport)->selectInvoiceNetwork('some-id', ['currency' => 'USDT', 'network' => 'tron']);
+            self::fail('Expected ApiException to be thrown.');
+        } catch (ApiException $e) {
+            self::assertSame('invalid_state', $e->getErrorCode());
+            self::assertSame(409, $e->getHttpStatus());
+        }
+    }
+
+    public function test_select_invoice_network_422_maps_to_validation_error(): void
+    {
+        $transport = new FakeTransport();
+        $transport->queue($this->jsonResponse(422, [
+            'error' => [
+                'code' => 'validation_error',
+                'message' => 'The given data was invalid.',
+                'details' => ['network' => ['The selected network is invalid.']],
+            ],
+        ]));
+
+        try {
+            $this->client($transport)->selectInvoiceNetwork('some-id', ['currency' => 'USDT', 'network' => 'solana']);
+            self::fail('Expected ApiException to be thrown.');
+        } catch (ApiException $e) {
+            self::assertTrue($e->isValidationError());
+            self::assertSame(['network' => ['The selected network is invalid.']], $e->getDetails());
+        }
+    }
+
+    // 4c. An invoice created without currency/network hydrates with nulls.
+    public function test_create_invoice_without_currency_and_network_hydrates_nulls_and_selection_required(): void
+    {
+        $transport = new FakeTransport();
+        $transport->queue($this->jsonResponse(201, ['data' => $this->invoicePayload([
+            'currency' => null,
+            'network' => null,
+            'address' => null,
+            'qr_payload' => null,
+            'selection_required' => true,
+        ])]));
+
+        $invoice = $this->client($transport)->createInvoice(['amount' => '12.5', 'external_id' => 'probe-1']);
+
+        $sentBody = json_decode((string) $transport->lastRequest()->body, true);
+        self::assertArrayNotHasKey('currency', $sentBody);
+        self::assertArrayNotHasKey('network', $sentBody);
+
+        self::assertNull($invoice->currency);
+        self::assertNull($invoice->network);
+        self::assertNull($invoice->address);
+        self::assertNull($invoice->qrPayload);
+        self::assertTrue($invoice->selectionRequired);
+        self::assertTrue($invoice->needsSelection());
+        self::assertTrue($invoice->isPending());
     }
 
     // 5. 422 validation_error => details + isValidationError() true.

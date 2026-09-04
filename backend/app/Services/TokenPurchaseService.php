@@ -48,8 +48,11 @@ class TokenPurchaseService
 
         $invoice = $this->invoices->create($merchant, [
             'amount' => $payAmount,
-            'currency' => $data['currency'],
-            'network' => $data['network'],
+            // Optional and paired: omitted here, the payer picks them on the
+            // hosted checkout and the purchase currency is filled in then
+            // (InvoiceService::selectNetwork).
+            'currency' => $data['currency'] ?? null,
+            'network' => $data['network'] ?? null,
             'external_id' => $data['external_id'] ?? null,
             'description' => $data['description'] ?? sprintf('Purchase of %s %s', Money::trim($tokenAmount), $token->symbol),
             'customer_email' => $data['customer_email'] ?? null,
@@ -69,7 +72,7 @@ class TokenPurchaseService
             'token_amount' => $tokenAmount,
             'price_usd' => $price,
             'pay_amount' => $payAmount,
-            'currency' => $data['currency'],
+            'currency' => $data['currency'] ?? null,
             'status' => TokenPurchaseStatus::Pending->value,
         ]);
 

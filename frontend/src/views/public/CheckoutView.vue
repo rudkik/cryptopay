@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowUpRight,
   Ban,
+  Check,
   Clock,
   ExternalLink,
   Loader2,
@@ -16,14 +17,17 @@ import AppLogo from '@/components/AppLogo.vue'
 import AmountDisplay from '@/components/AmountDisplay.vue'
 import CopyButton from '@/components/CopyButton.vue'
 import NetworkBadge from '@/components/NetworkBadge.vue'
+import NetworkIcon from '@/components/NetworkIcon.vue'
 import ProgressBar from '@/components/ProgressBar.vue'
 import QrCode from '@/components/QrCode.vue'
 import Skeleton from '@/components/Skeleton.vue'
+import Spinner from '@/components/Spinner.vue'
 import SuccessCheck from '@/components/SuccessCheck.vue'
 import { publicInvoicesApi } from '@/api/invoices'
 import { isApiError } from '@/api/http'
-import type { PublicInvoice } from '@/api/types'
+import type { Currency, InvoiceSelectionOption, NetworkCode, PublicInvoice } from '@/api/types'
 import { useCountdown } from '@/composables/useCountdown'
+import { reportError } from '@/composables/useErrorHandler'
 import { usePolling } from '@/composables/usePolling'
 import {
   compareAmounts,
@@ -32,6 +36,7 @@ import {
   subtractAmounts,
   truncateMiddle,
 } from '@/utils/format'
+import { CURRENCIES } from '@/utils/options'
 import { safeUrl } from '@/utils/url'
 
 const props = defineProps<{ id: string }>()
@@ -89,6 +94,78 @@ function txExplorerUrl(url: string | null | undefined): string | null {
   return safeUrl(url)
 }
 
+/* ---------------------------------------------------------------- selection */
+
+const selectedCurrency = ref<Currency | null>(null)
+const selectedNetwork = ref<NetworkCode | null>(null)
+const submitting = ref(false)
+
+const options = computed<InvoiceSelectionOption[]>(() => invoice.value?.options ?? [])
+
+/** Kept in the fixed USDT/USDC order so the toggle never reshuffles between polls. */
+const availableCurrencies = computed<Currency[]>(() =>
+  CURRENCIES.filter((currency) => options.value.some((o) => o.currency === currency)),
+)
+
+const networkOptions = computed<InvoiceSelectionOption[]>(() =>
+  options.value.filter((o) => o.currency === selectedCurrency.value),
+)
+
+const selectedOption = computed<InvoiceSelectionOption | null>(
+  () => networkOptions.value.find((o) => o.network === selectedNetwork.value) ?? null,
+)
+
+const canSubmit = computed(
+  () => selectedCurrency.value !== null && selectedNetwork.value !== null && !submitting.value,
+)
+
+/** Nominal block times — a confirmation estimate, not a promise. */
+const BLOCK_SECONDS: Record<NetworkCode, number> = { ethereum: 12, bsc: 3, tron: 3 }
+
+function etaMinutes(option: InvoiceSelectionOption): number {
+  const seconds = option.confirmations_required * (BLOCK_SECONDS[option.network] ?? 12)
+  return Math.max(1, Math.ceil(seconds / 60))
+}
+
+function chooseCurrency(currency: Currency): void {
+  if (selectedCurrency.value === currency) return
+  selectedCurrency.value = currency
+  // Networks are offered per currency: drop a pick that the new currency does not support.
+  const stillOffered = options.value.some(
+    (o) => o.currency === currency && o.network === selectedNetwork.value,
+  )
+  if (!stillOffered) selectedNetwork.value = null
+}
+
+async function submitSelection(): Promise<void> {
+  const currency = selectedCurrency.value
+  const network = selectedNetwork.value
+  if (!currency || !network || submitting.value) return
+
+  submitting.value = true
+  let stale = false
+  try {
+    invoice.value = await publicInvoicesApi.select(props.id, { currency, network })
+  } catch (error) {
+    reportError(error, 'Could not confirm that payment method')
+    // 409/422 mean our copy is out of date — picked in another tab, or expired meanwhile.
+    stale = isApiError(error) && (error.status === 409 || error.status === 422)
+  } finally {
+    submitting.value = false
+  }
+  if (stale) await load(true)
+}
+
+/** Warning line: the pending pick before selection, the locked-in pair afterwards. */
+const payCurrency = computed<Currency | null>(() =>
+  invoice.value?.selection_required ? selectedCurrency.value : (invoice.value?.currency ?? null),
+)
+const payNetworkName = computed<string | null>(() =>
+  invoice.value?.selection_required
+    ? (selectedOption.value?.network_name ?? null)
+    : (invoice.value?.network_name ?? null),
+)
+
 /**
  * The QR must encode the very address shown and copied below it — two payment
  * destinations on one page is a payment-redirection bug waiting to happen.
@@ -104,6 +181,8 @@ const qrValue = computed(() => {
 })
 
 async function load(silent = false): Promise<void> {
+  // A background poll must not roll the invoice back while the selection POST is in flight.
+  if (silent && submitting.value) return
   if (!silent) loading.value = true
   refreshing.value = silent
   try {
@@ -198,7 +277,13 @@ onMounted(async () => {
               </div>
               <div class="mt-2.5 flex items-center justify-between gap-3 text-xs text-muted">
                 <span>Network</span>
-                <NetworkBadge :network="invoice.network" :name="invoice.network_name" size="sm" />
+                <NetworkBadge
+                  v-if="invoice.network"
+                  :network="invoice.network"
+                  :name="invoice.network_name"
+                  size="sm"
+                />
+                <span v-else>—</span>
               </div>
               <div v-if="invoice.paid_at" class="mt-2.5 flex items-center justify-between gap-3 text-xs text-muted">
                 <span>Confirmed at</span>
@@ -316,6 +401,35 @@ onMounted(async () => {
           </div>
         </div>
 
+        <!--
+          An unselected invoice that has passed its expiry: the scheduler has not
+          flipped the status yet and there is no address to show.
+        -->
+        <div
+          v-else-if="!invoice.selection_required && !invoice.address"
+          class="card-glass p-8 text-center"
+        >
+          <div
+            class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-danger/30 bg-danger/10 text-danger"
+          >
+            <TimerOff :size="20" aria-hidden="true" />
+          </div>
+          <h1 class="mt-4 text-base font-semibold">Payment window closed</h1>
+          <p class="mt-1.5 text-sm text-muted">
+            This invoice expired on {{ formatDateTime(invoice.expires_at) }}. Start a new payment with
+            the merchant.
+          </p>
+          <a
+            v-if="cancelUrl"
+            :href="cancelUrl"
+            class="btn-secondary mt-5"
+            rel="noopener noreferrer"
+          >
+            Return to merchant
+            <ArrowUpRight :size="14" aria-hidden="true" />
+          </a>
+        </div>
+
         <!-- AWAITING PAYMENT (pending / confirming) -->
         <div v-else class="card-glass overflow-hidden">
           <div class="border-b border-border px-6 py-5 text-center">
@@ -323,8 +437,16 @@ onMounted(async () => {
             <div class="mt-2">
               <AmountDisplay :value="invoice.amount" :currency="invoice.currency" size="xl" />
             </div>
-            <div class="mt-3 flex flex-wrap items-center justify-center gap-2">
-              <NetworkBadge :network="invoice.network" :name="invoice.network_name" />
+            <!-- No currency is chosen yet, so the amount carries no symbol. -->
+            <p v-if="invoice.selection_required" class="mt-2 text-xs text-muted">
+              USD-pegged · pay in {{ availableCurrencies.join(' or ') }}
+            </p>
+            <div v-else class="mt-3 flex flex-wrap items-center justify-center gap-2">
+              <NetworkBadge
+                v-if="invoice.network"
+                :network="invoice.network"
+                :name="invoice.network_name"
+              />
               <span
                 v-if="invoice.status === 'confirming'"
                 class="chip border-warning/30 bg-warning/10 text-warning"
@@ -341,44 +463,151 @@ onMounted(async () => {
           </div>
 
           <div class="flex flex-col items-center gap-5 px-6 py-6">
-            <QrCode
-              :value="qrValue"
-              :size="192"
-              :label="`QR code for ${invoice.amount} ${invoice.currency} on ${invoice.network_name}`"
-            />
+            <!-- SELECTION STEP -->
+            <template v-if="invoice.selection_required">
+              <fieldset class="w-full min-w-0" :disabled="submitting">
+                <legend class="label">Step 1 · Currency</legend>
+                <div
+                  class="grid auto-cols-fr grid-flow-col gap-1 rounded-xl border border-border bg-surface-2 p-1"
+                >
+                  <label
+                    v-for="currency in availableCurrencies"
+                    :key="currency"
+                    class="block cursor-pointer"
+                  >
+                    <input
+                      type="radio"
+                      name="checkout-currency"
+                      class="peer sr-only"
+                      :value="currency"
+                      :checked="selectedCurrency === currency"
+                      @change="chooseCurrency(currency)"
+                    />
+                    <span
+                      class="block rounded-lg px-3 py-2 text-center text-sm font-medium text-muted transition-colors peer-hover:text-text peer-checked:bg-primary peer-checked:text-white peer-checked:shadow-glow-sm peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-bg"
+                    >
+                      {{ currency }}
+                    </span>
+                  </label>
+                </div>
+              </fieldset>
 
-            <div class="w-full">
-              <p class="label mb-1.5">Send to this address</p>
-              <div
-                class="flex items-center gap-2 rounded-xl border border-border bg-bg/60 px-3 py-2.5"
-              >
-                <code class="mono min-w-0 flex-1 break-all text-[12.5px] text-text">
-                  {{ invoice.address }}
-                </code>
-                <CopyButton :value="invoice.address" label="Address" :size="15" notify />
+              <fieldset class="w-full min-w-0" :disabled="submitting">
+                <legend class="label">Step 2 · Network</legend>
+                <p
+                  v-if="!selectedCurrency"
+                  class="rounded-xl border border-dashed border-border px-3.5 py-3 text-xs text-muted"
+                >
+                  Choose a currency to see the networks it can be paid on.
+                </p>
+                <div v-else class="space-y-2">
+                  <label
+                    v-for="option in networkOptions"
+                    :key="option.network"
+                    class="block cursor-pointer"
+                  >
+                    <input
+                      type="radio"
+                      name="checkout-network"
+                      class="peer sr-only"
+                      :value="option.network"
+                      :checked="selectedNetwork === option.network"
+                      @change="selectedNetwork = option.network"
+                    />
+                    <span
+                      class="flex items-center gap-3 rounded-xl border px-3.5 py-3 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-bg"
+                      :class="
+                        selectedNetwork === option.network
+                          ? 'border-primary bg-primary/10'
+                          : 'border-border bg-bg/40 hover:border-primary/40 hover:bg-surface-2/60'
+                      "
+                    >
+                      <NetworkIcon
+                        :network="option.network"
+                        :size="18"
+                        :class="selectedNetwork === option.network ? 'text-primary-hover' : 'text-muted'"
+                      />
+                      <span class="min-w-0 flex-1">
+                        <span class="flex flex-wrap items-baseline gap-x-1.5">
+                          <span class="text-sm font-medium text-text">{{ option.network_name }}</span>
+                          <span class="text-[11px] text-muted">{{ option.standard }}</span>
+                        </span>
+                        <span class="mt-0.5 block text-xs text-muted">
+                          {{ option.confirmations_required }} confirmations · ≈ {{ etaMinutes(option) }}
+                          min
+                        </span>
+                      </span>
+                      <span
+                        class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border"
+                        :class="
+                          selectedNetwork === option.network
+                            ? 'border-primary bg-primary text-white'
+                            : 'border-border'
+                        "
+                        aria-hidden="true"
+                      >
+                        <Check v-if="selectedNetwork === option.network" :size="12" />
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              </fieldset>
+            </template>
+
+            <!-- ADDRESS + QR -->
+            <template v-else-if="invoice.address">
+              <QrCode
+                :value="qrValue"
+                :size="192"
+                :label="`QR code for ${invoice.amount} ${invoice.currency} on ${invoice.network_name}`"
+              />
+
+              <div class="w-full">
+                <p class="label mb-1.5">Send to this address</p>
+                <div
+                  class="flex items-center gap-2 rounded-xl border border-border bg-bg/60 px-3 py-2.5"
+                >
+                  <code class="mono min-w-0 flex-1 break-all text-[12.5px] text-text">
+                    {{ invoice.address }}
+                  </code>
+                  <CopyButton :value="invoice.address" label="Address" :size="15" notify />
+                </div>
+                <a
+                  v-if="explorerAddressUrl"
+                  :href="explorerAddressUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="mt-2 inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-primary-hover"
+                >
+                  View address on explorer
+                  <ExternalLink :size="11" aria-hidden="true" />
+                </a>
               </div>
-              <a
-                v-if="explorerAddressUrl"
-                :href="explorerAddressUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="mt-2 inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-primary-hover"
-              >
-                View address on explorer
-                <ExternalLink :size="11" aria-hidden="true" />
-              </a>
-            </div>
+            </template>
 
+            <!-- Shown once a pair is picked, and for every already-selected invoice. -->
             <p
+              v-if="payCurrency && payNetworkName"
               class="flex w-full items-start gap-2.5 rounded-xl border border-warning/25 bg-warning/[.07] px-3.5 py-3 text-xs leading-relaxed text-warning"
             >
               <AlertTriangle :size="15" class="mt-px shrink-0" aria-hidden="true" />
               <span>
-                Send only <strong class="font-semibold">{{ invoice.currency }}</strong> on
-                <strong class="font-semibold">{{ invoice.network_name }}</strong>. Any other asset or
+                Send only <strong class="font-semibold">{{ payCurrency }}</strong> on
+                <strong class="font-semibold">{{ payNetworkName }}</strong>. Any other asset or
                 network will be lost permanently.
               </span>
             </p>
+
+            <button
+              v-if="invoice.selection_required"
+              type="button"
+              class="btn-primary w-full"
+              :disabled="!canSubmit"
+              @click="submitSelection"
+            >
+              <Spinner v-if="submitting" :size="15" label="Confirming" />
+              Continue to payment
+            </button>
 
             <!-- Countdown -->
             <div

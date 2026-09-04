@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Enums\InvoiceStatus;
 use App\Http\Controllers\Api\V1\Concerns\ResolvesMerchant;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\SelectInvoiceNetworkRequest;
 use App\Http\Requests\V1\StoreInvoiceRequest;
 use App\Http\Resources\InvoiceResource;
 use App\Models\Invoice;
@@ -63,6 +64,23 @@ class InvoiceController extends Controller
     public function show(Request $request, string $invoice): InvoiceResource
     {
         return new InvoiceResource($this->find($request, $invoice));
+    }
+
+    /**
+     * Merchant-side twin of the public selection step, for a merchant that
+     * renders its own checkout instead of the hosted one (SPEC §6.1).
+     */
+    public function select(SelectInvoiceNetworkRequest $request, string $invoice): InvoiceResource
+    {
+        $model = $this->find($request, $invoice);
+
+        $selected = $this->invoices->selectNetwork(
+            $model,
+            (string) $request->input('currency'),
+            (string) $request->input('network'),
+        );
+
+        return new InvoiceResource($selected->load(['depositAddress', 'transactions', 'tokenPurchase.token']));
     }
 
     public function cancel(Request $request, string $invoice): InvoiceResource

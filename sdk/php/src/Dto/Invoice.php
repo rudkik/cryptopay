@@ -9,6 +9,11 @@ namespace CryptoPay\Sdk\Dto;
  *
  * Amounts (`amount`, `amountReceived`, `amountConfirmed`) are decimal
  * strings — never cast them to float, use bcmath/GMP for arithmetic.
+ *
+ * An invoice created without a currency/network pair comes back with
+ * `currency`, `network`, `address` and `qrPayload` all null and
+ * `selectionRequired` true — the payer picks the pair on the hosted
+ * payment page (or the merchant calls `Client::selectInvoiceNetwork()`).
  */
 final readonly class Invoice
 {
@@ -23,8 +28,9 @@ final readonly class Invoice
         public ?string $externalId,
         public string $status,
         public bool $isPaid,
-        public string $currency,
-        public string $network,
+        public ?string $currency,
+        public ?string $network,
+        public bool $selectionRequired,
         public string $amount,
         public string $amountReceived,
         public string $amountConfirmed,
@@ -69,8 +75,9 @@ final readonly class Invoice
             externalId: $data['external_id'] ?? null,
             status: (string) ($data['status'] ?? ''),
             isPaid: (bool) ($data['is_paid'] ?? false),
-            currency: (string) ($data['currency'] ?? ''),
-            network: (string) ($data['network'] ?? ''),
+            currency: $data['currency'] ?? null,
+            network: $data['network'] ?? null,
+            selectionRequired: (bool) ($data['selection_required'] ?? false),
             amount: (string) ($data['amount'] ?? '0'),
             amountReceived: (string) ($data['amount_received'] ?? '0'),
             amountConfirmed: (string) ($data['amount_confirmed'] ?? '0'),
@@ -110,6 +117,12 @@ final readonly class Invoice
     public function isExpired(): bool
     {
         return $this->status === 'expired';
+    }
+
+    /** The payer (or the merchant) still has to pick a currency/network pair. */
+    public function needsSelection(): bool
+    {
+        return $this->selectionRequired;
     }
 
     /**

@@ -64,6 +64,58 @@ const invoice = await cryptoPay.createInvoice({
 Статус счёта финализируется асинхронно (через сеть) — опирайтесь на вебхуки
 (см. ниже) или на поллинг `getInvoice(invoice.id)`, а не на редирект как на факт оплаты.
 
+## Плательщик сам выбирает валюту и сеть
+
+`currency` и `network` необязательны — но по правилу «оба или ни одного»: если передать
+ровно одно из двух, API ответит `422 validation_error`. Суммы номинированы в USD и от
+сети не зависят (USDT = USDC = 1 USD), поэтому `amount` в обоих случаях одинаковый.
+
+Счёт без пары создаётся в статусе `pending`, но пока без адреса:
+
+```ts
+const invoice = await cryptoPay.createInvoice({
+  amount: '12.50',
+  external_id: 'order-42',
+})
+
+invoice.currency           // null
+invoice.network            // null
+invoice.address            // null — адрес выпускается только после выбора
+invoice.qr_payload         // null
+invoice.selection_required // true
+
+// res.redirect(invoice.payment_url) — валюту и сеть выберет сам плательщик
+```
+
+Hosted-страница оплаты показывает выбор валюты и сети сама (она ходит в публичный
+`POST /api/public/invoices/{id}/select`, ключ мерчанта там не нужен), так что в обычном
+сценарии от вас требуется только редирект на `payment_url`.
+
+Если выбор происходит в вашем собственном интерфейсе, вызовите `selectInvoiceNetwork()` —
+он вернёт тот же счёт, уже с адресом:
+
+```ts
+const selected = await cryptoPay.selectInvoiceNetwork(invoice.id, {
+  currency: 'USDC',  // 'USDT' | 'USDC'
+  network: 'bsc',    // 'ethereum' | 'bsc' | 'tron'
+})
+
+selected.address            // адрес для перевода
+selected.qr_payload         // payload для QR-кода
+selected.selection_required // false
+```
+
+Выбор делается один раз. Возможные ошибки (`ApiError`): `invalid_state` (409 — пара уже
+выбрана, счёт не в `pending` или просрочен), `validation_error` (422 — неизвестная или
+отключённая пара), `not_found` (404).
+
+То же правило «оба или ни одного» действует и для `createTokenPurchase()`: счёт покупки
+токенов можно создать без пары и довести до адреса тем же `selectInvoiceNetwork(invoice.id, ...)`.
+
+**Поля, которые могут быть `null`:** у `Invoice` — `currency`, `network`, `address`,
+`qr_payload` (пока `selection_required: true`), у `TokenPurchase` — `currency`. Поля
+`amount`, `payment_url` и `expires_at` заполнены всегда.
+
 ## Обработка ошибок
 
 Все ошибки API — это экземпляры `ApiError` (наследуется от `CryptoPayError`, базового класса
@@ -185,8 +237,8 @@ const { purchase, invoice } = await cryptoPay.createTokenPurchase(
   {
     token_id: 'tok_123',
     token_amount: '200',       // либо pay_amount — сумма к оплате, взаимоисключимо с token_amount
-    currency: 'USDT',
-    network: 'tron',
+    currency: 'USDT',          // необязательно — но только вместе с network
+    network: 'tron',           // необязательно — но только вместе с currency
     customer_id: 'user-42',
   },
   idempotencyKey,
@@ -213,6 +265,7 @@ const holdings = await cryptoPay.customerHoldings('user-42')
 | `getInvoice(id)` | Получить счёт по id |
 | `listInvoices(filters?)` | Постраничный список счетов |
 | `cancelInvoice(id)` | Отменить счёт |
+| `selectInvoiceNetwork(id, params)` | Выбрать `currency`/`network` для счёта, созданного без них |
 | `networks()` | Список поддерживаемых сетей |
 | `balances()` | Балансы мерчанта (`{ data, totals }`) |
 | `transactions(filters?)` | Постраничный список on-chain транзакций |

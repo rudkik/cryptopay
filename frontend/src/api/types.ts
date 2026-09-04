@@ -39,14 +39,15 @@ export interface Invoice {
   external_id: string | null
   status: InvoiceStatus
   is_paid: boolean
-  currency: Currency
-  network: NetworkCode
+  /** Null until the payer (or the merchant) picks a currency/network pair. */
+  currency: Currency | null
+  network: NetworkCode | null
   amount: string
   amount_received: string
   amount_confirmed: string
-  address: string
+  address: string | null
   payment_url: string
-  qr_payload: string
+  qr_payload: string | null
   description: string | null
   customer_email?: string | null
   customer_id?: string | null
@@ -56,6 +57,8 @@ export interface Invoice {
   expires_at: string | null
   paid_at: string | null
   created_at: string
+  /** True while the invoice still needs a currency/network pick before it can be paid. */
+  selection_required: boolean
   transactions?: InvoiceTransaction[]
   token_purchase?: TokenPurchase | null
   /** Present on admin detail responses (SPEC §6.4 `GET /invoices/{id}`). */
@@ -67,10 +70,24 @@ export interface Invoice {
 /** SPEC §6.3 — public checkout payload: Invoice minus private fields, plus extras. */
 export interface PublicInvoice
   extends Omit<Invoice, 'metadata' | 'customer_email' | 'customer_id' | 'merchant' | 'webhooks'> {
-  network_name: string
+  network_name: string | null
   explorer_address_url: string | null
   token_contract: PublicTokenContract | null
+  /** 0 while nothing is selected yet. */
+  confirmations_required: number
+  /** Pairs the payer may pick from; empty once `selection_required` is false. */
+  options: InvoiceSelectionOption[]
   merchant_name?: string | null
+}
+
+/** One selectable currency/network pair offered on the hosted checkout. */
+export interface InvoiceSelectionOption {
+  network: NetworkCode
+  network_name: string
+  chain_id: number | null
+  currency: Currency
+  confirmations_required: number
+  standard: 'ERC-20' | 'BEP-20' | 'TRC-20'
 }
 
 export interface PublicTokenContract {

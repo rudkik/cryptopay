@@ -6,6 +6,9 @@ namespace CryptoPay\Sdk\Dto;
 
 /**
  * A customer's purchase of a merchant token.
+ *
+ * `currency` is null while the purchase invoice is still waiting for the
+ * payer to pick a currency/network pair — see {@see Invoice}.
  */
 final readonly class TokenPurchase
 {
@@ -22,7 +25,7 @@ final readonly class TokenPurchase
         public string $tokenAmount,
         public string $priceUsd,
         public string $payAmount,
-        public string $currency,
+        public ?string $currency,
         public string $status,
         public ?string $completedAt,
         public ?string $createdAt,
@@ -46,7 +49,7 @@ final readonly class TokenPurchase
             tokenAmount: (string) ($data['token_amount'] ?? '0'),
             priceUsd: (string) ($data['price_usd'] ?? '0'),
             payAmount: (string) ($data['pay_amount'] ?? '0'),
-            currency: (string) ($data['currency'] ?? ''),
+            currency: $data['currency'] ?? null,
             status: (string) ($data['status'] ?? ''),
             completedAt: $data['completed_at'] ?? null,
             createdAt: $data['created_at'] ?? null,

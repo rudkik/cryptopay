@@ -11,6 +11,7 @@ import type {
   MerchantAccount,
   Network,
   Paginated,
+  SelectInvoiceNetworkParams,
   Token,
   TokenPurchase,
   TokenPurchaseResult,
@@ -307,6 +308,19 @@ export class CryptoPay {
   /** Отменить счёт. */
   async cancelInvoice(id: string): Promise<Invoice> {
     const { data } = await this.request<{ data: Invoice }>('POST', `/invoices/${encodePathSegment(id)}/cancel`)
+    return data
+  }
+
+  /**
+   * Выбрать валюту и сеть для счёта, созданного без них (`selection_required: true`).
+   * Возвращает тот же счёт уже с `address`/`qr_payload`; повторный выбор — `invalid_state` (409).
+   */
+  async selectInvoiceNetwork(id: string, params: SelectInvoiceNetworkParams): Promise<Invoice> {
+    const { data } = await this.request<{ data: Invoice }>(
+      'POST',
+      `/invoices/${encodePathSegment(id)}/select`,
+      { body: params },
+    )
     return data
   }
 

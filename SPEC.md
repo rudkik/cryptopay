@@ -98,6 +98,7 @@ Auth: `Authorization: Bearer cp_live_...`. Rate limit 120 req/min на ключ.
 ```json
 {
   "id": "uuid", "type": "payment", "external_id": "order-1", "status": "pending", "is_paid": false,
+  "selection_required": false,
   "currency": "USDT", "network": "tron",
   "amount": "100.000000", "amount_received": "0", "amount_confirmed": "0",
   "address": "T...", "payment_url": "http://localhost:8095/pay/{id}",
@@ -111,7 +112,10 @@ Auth: `Authorization: Bearer cp_live_...`. Rate limit 120 req/min на ключ.
 ```
 `qr_payload`: для EVM — `ethereum:{contract}@{chainId}/transfer?address={address}&uint256={amount_raw}` (EIP‑681), для Tron — просто адрес.
 
-- `POST /api/v1/invoices` — body: `amount` (required, >0), `currency` (USDT|USDC), `network` (ethereum|bsc|tron), `external_id?`, `description?`, `customer_email?`, `customer_id?`, `metadata?` (object), `success_url?`, `cancel_url?`, `expires_in?` (сек, default 3600, max 86400). → 201 Invoice.
+**Отложенный выбор сети.** `currency` и `network` необязательны и задаются **только парой**. Если их не передать, счёт создаётся в `pending` с `currency = network = address = qr_payload = null` и `selection_required: true` — валюту и сеть выбирает плательщик на hosted checkout (§6.3), и именно выбор выделяет депозитный адрес. Суммы номинированы в USD (USDT = USDC = 1 USD), поэтому `amount` от сети не зависит и при выборе не меняется. Невыбранный счёт истекает как обычный. `selection_required` = `deposit_address_id is null && status = pending && expires_at не прошёл`.
+
+- `POST /api/v1/invoices` — body: `amount` (required, >0), `currency` (USDT|USDC, optional), `network` (ethereum|bsc|tron, optional; либо обе, либо ни одной — одна без второй = 422), `external_id?`, `description?`, `customer_email?`, `customer_id?`, `metadata?` (object), `success_url?`, `cancel_url?`, `expires_in?` (сек, default 3600, max 86400). → 201 Invoice.
+- `POST /api/v1/invoices/{id}/select` — body `{ "currency", "network" }` → Invoice. Мерчант‑сторонний двойник §6.3: то же поведение и те же коды ошибок, для мерчанта с собственным чекаутом.
 - `GET /api/v1/invoices` — фильтры `status`, `external_id`, `network`, `currency`, `from`, `to`, `per_page` (≤100). Пагинация Laravel (`data`, `meta`).
 - `GET /api/v1/invoices/{id}` → Invoice.
 - `POST /api/v1/invoices/{id}/cancel` → Invoice (только из `pending`, иначе 409).
@@ -119,7 +123,7 @@ Auth: `Authorization: Bearer cp_live_...`. Rate limit 120 req/min на ключ.
 - `GET /api/v1/balances` → `[ { "currency", "network", "available", "pending" } ]` + `totals` по currency.
 - `GET /api/v1/transactions` — фильтры `invoice_id`, `network`, `status`, пагинация.
 - `GET /api/v1/tokens` — токены мерчанта (active).
-- `POST /api/v1/token-purchases` — `token_id`, одно из `token_amount` | `pay_amount`, `currency`, `network`, `customer_id` (required), `customer_email?`, `external_id?`, `success_url?`, `cancel_url?`, `metadata?`, `expires_in?` → 201 `{ "purchase": {...}, "invoice": Invoice }`. Цена фиксируется на момент создания; `pay_amount = token_amount * price_usd` (USDT/USDC считаем = 1 USD).
+- `POST /api/v1/token-purchases` — `token_id`, одно из `token_amount` | `pay_amount`, `currency` (optional), `network` (optional; пара — как у счетов), `customer_id` (required), `customer_email?`, `external_id?`, `success_url?`, `cancel_url?`, `metadata?`, `expires_in?` → 201 `{ "purchase": {...}, "invoice": Invoice }`. Цена фиксируется на момент создания; `pay_amount = token_amount * price_usd` (USDT/USDC считаем = 1 USD).
 - `GET /api/v1/token-purchases/{id}`; `GET /api/v1/token-purchases?customer_id=`.
 - `GET /api/v1/customers/{customer_id}/holdings` → `[ { "token": {...}, "amount": "..." } ]`.
 - `GET /api/v1/me` → мерчант + webhook settings (без секрета).
@@ -132,8 +136,18 @@ Body: `{ "id": delivery_uuid, "event": "invoice.paid", "created_at": ISO, "data"
 Успех = 2xx. Ретраи: 1m, 5m, 30m, 2h, 6h, 24h (6 попыток) через очередь `webhooks`. Ручной повтор из админки.
 
 ### 6.3 Public (hosted checkout, без auth) — `/api/public/*`
-- `GET /api/public/invoices/{id}` → Invoice без `metadata`, `customer_*`, плюс `network_name`, `explorer_address_url`, `token_contract`.
-- Фронт поллит его каждые 5с.
+Rate limit 120 req/min на IP на весь префикс. `{id}` обязан быть uuid, иначе 404.
+
+- `GET /api/public/invoices/{id}` → Invoice без `metadata`, `customer_*`, плюс `network_name`, `explorer_address_url`, `token_contract`, `confirmations_required`, `selection_required` и `options`.
+  `options` — непустой, только когда `selection_required: true`; иначе `[]`. Это enabled‑сети × enabled‑контракты (§2):
+  ```json
+  [ { "network": "tron", "network_name": "Tron", "chain_id": null, "currency": "USDT",
+      "confirmations_required": 19, "standard": "TRC-20" } ]
+  ```
+  `standard` выводится из кода сети: ethereum → ERC‑20, bsc → BEP‑20, tron → TRC‑20.
+- `POST /api/public/invoices/{id}/select` — body `{ "currency": "USDT|USDC", "network": "ethereum|bsc|tron" }` → 200 Invoice (тот же публичный объект, уже с `address`, `qr_payload`, `network_name` и `selection_required: false`).
+  Разрешён, только пока счёт `pending`, адрес ещё не выделен и `expires_at` не прошёл; иначе 409 `invalid_state`. Пара вне списка `options` → 422. Выбор выделяет адрес через AddressService **не более одного раза на счёт**: строка счёта берётся под `lockForUpdate`, повторная проверка идёт внутри транзакции, поэтому двойной сабмит с чекаута не порождает второй адрес (второй запрос получает 409).
+- Фронт поллит `GET` каждые 5с.
 
 ### 6.4 Admin API — `/api/admin/*`
 Auth: Laravel Sanctum, `POST /api/admin/auth/login {email,password}` → `{ token, user }` (personal access token), затем `Authorization: Bearer <token>`. `POST /api/admin/auth/logout`, `GET /api/admin/auth/me`.
@@ -215,7 +229,7 @@ WATCHER_ENABLED=true            # false = watcher только дериваци�
 
 Тема: тёмно‑фиолетовая. Токены: bg `#0a0613`, surface `#150d27`, surface‑2 `#1e1438`, border `#2d2050`, primary `#8b5cf6`, primary‑hover `#a78bfa`, accent `#d946ef`, text `#ece8f6`, muted `#9d94b8`, success `#34d399`, warning `#fbbf24`, danger `#f87171`. Шрифт Inter / system, моно для адресов и хешей.
 
-Роуты: `/login`; `/admin` (dashboard), `/admin/merchants`, `/admin/merchants/:id`, `/admin/invoices`, `/admin/invoices/:id`, `/admin/transactions`, `/admin/networks`, `/admin/tokens`, `/admin/tokens/:id`, `/admin/webhooks`, `/admin/users`, `/admin/docs` (документация merchant API с примерами curl/PHP/JS и описанием подписи вебхуков); публичная `/pay/:id` — hosted checkout (сумма, сеть/токен, адрес с копированием, QR, таймер, прогресс подтверждений, статусы, кнопка success_url при оплате).
+Роуты: `/login`; `/admin` (dashboard), `/admin/merchants`, `/admin/merchants/:id`, `/admin/invoices`, `/admin/invoices/:id`, `/admin/transactions`, `/admin/networks`, `/admin/tokens`, `/admin/tokens/:id`, `/admin/webhooks`, `/admin/users`, `/admin/docs` (документация merchant API с примерами curl/PHP/JS и описанием подписи вебхуков); публичная `/pay/:id` — hosted checkout (сумма, сеть/токен, адрес с копированием, QR, таймер, прогресс подтверждений, статусы, кнопка success_url при оплате; при `selection_required` — шаг выбора валюты и сети из `options` с подтверждениями и оценкой времени, после `POST .../select` адрес появляется без перезагрузки).
 
 Все запросы через `/api` (тот же origin, проксирует nginx). Токен админа — в `localStorage`, axios interceptor, редирект на `/login` при 401.
 

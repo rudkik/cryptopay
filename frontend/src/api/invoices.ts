@@ -1,5 +1,5 @@
 import { cleanParams, get, getOne, postOne, type QueryParams } from './http'
-import type { Invoice, Paginated, PublicInvoice } from './types'
+import type { Currency, Invoice, NetworkCode, Paginated, PublicInvoice } from './types'
 
 export interface InvoiceFilters extends QueryParams {
   status?: string
@@ -30,6 +30,15 @@ export const invoicesApi = {
     postOne<Invoice>(`/admin/invoices/${id}/simulate-payment`, payload),
 }
 
+export interface SelectPaymentMethodPayload {
+  currency: Currency
+  network: NetworkCode
+}
+
 export const publicInvoicesApi = {
   get: (id: string) => getOne<PublicInvoice>(`/public/invoices/${id}`),
+
+  /** Payer picks the currency/network pair; the response is the invoice with its address. */
+  select: (id: string, payload: SelectPaymentMethodPayload) =>
+    postOne<PublicInvoice>(`/public/invoices/${id}/select`, payload),
 }

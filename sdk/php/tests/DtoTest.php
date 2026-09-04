@@ -8,6 +8,7 @@ use CryptoPay\Sdk\Dto\Balance;
 use CryptoPay\Sdk\Dto\Balances;
 use CryptoPay\Sdk\Dto\Invoice;
 use CryptoPay\Sdk\Dto\Paginated;
+use CryptoPay\Sdk\Dto\TokenPurchase;
 use CryptoPay\Sdk\Dto\Transaction;
 use PHPUnit\Framework\TestCase;
 
@@ -64,6 +65,74 @@ final class DtoTest extends TestCase
         self::assertTrue($invoice->isPaid);
         // The method.
         self::assertTrue($invoice->isPaid());
+    }
+
+    public function test_invoice_without_a_selected_pair_hydrates_nulls_and_needs_selection(): void
+    {
+        $invoice = Invoice::fromArray([
+            'id' => 'inv-1',
+            'type' => 'payment',
+            'status' => 'pending',
+            'is_paid' => false,
+            'currency' => null,
+            'network' => null,
+            'amount' => '12.500000',
+            'amount_received' => '0',
+            'amount_confirmed' => '0',
+            'address' => null,
+            'qr_payload' => null,
+            'payment_url' => 'http://localhost:8095/pay/inv-1',
+            'selection_required' => true,
+            'metadata' => [],
+            'transactions' => [],
+        ]);
+
+        self::assertNull($invoice->currency);
+        self::assertNull($invoice->network);
+        self::assertNull($invoice->address);
+        self::assertNull($invoice->qrPayload);
+        self::assertSame('12.500000', $invoice->amount);
+        self::assertTrue($invoice->selectionRequired);
+        self::assertTrue($invoice->needsSelection());
+        self::assertTrue($invoice->isPending());
+    }
+
+    public function test_invoice_selection_required_defaults_to_false_when_absent(): void
+    {
+        $invoice = Invoice::fromArray([
+            'id' => 'inv-1',
+            'type' => 'payment',
+            'status' => 'pending',
+            'is_paid' => false,
+            'currency' => 'USDT',
+            'network' => 'tron',
+            'amount' => '1',
+            'amount_received' => '0',
+            'amount_confirmed' => '0',
+            'metadata' => [],
+            'transactions' => [],
+        ]);
+
+        self::assertFalse($invoice->selectionRequired);
+        self::assertFalse($invoice->needsSelection());
+    }
+
+    public function test_token_purchase_currency_is_null_until_the_pair_is_selected(): void
+    {
+        $purchase = TokenPurchase::fromArray([
+            'id' => 'tp-1',
+            'invoice_id' => 'inv-1',
+            'token_id' => 'tok-1',
+            'customer_id' => 'user-42',
+            'token_amount' => '100',
+            'price_usd' => '1.5',
+            'pay_amount' => '150',
+            'currency' => null,
+            'status' => 'pending',
+        ]);
+
+        self::assertNull($purchase->currency);
+        self::assertFalse($purchase->isCompleted());
     }
 
     public function test_balances_total_helper_returns_zeros_for_unknown_currency(): void

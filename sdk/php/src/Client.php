@@ -170,6 +170,16 @@ final class Client
         return Invoice::fromArray((array) ($data['data'] ?? []));
     }
 
+    /**
+     * @param  array<mixed>  $params  `['currency' => 'USDT', 'network' => 'tron']`
+     */
+    public function selectInvoiceNetwork(string $id, array $params): Invoice
+    {
+        $data = $this->request('POST', 'invoices/'.$this->encodeSegment($id).'/select', body: $params);
+
+        return Invoice::fromArray((array) ($data['data'] ?? []));
+    }
+
     // ------------------------------------------------------------------
     // Networks / balances / transactions
     // ------------------------------------------------------------------

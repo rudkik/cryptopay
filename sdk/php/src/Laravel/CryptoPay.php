@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static \CryptoPay\Sdk\Dto\Invoice getInvoice(string $id)
  * @method static \CryptoPay\Sdk\Dto\Paginated listInvoices(array $filters = [])
  * @method static \CryptoPay\Sdk\Dto\Invoice cancelInvoice(string $id)
+ * @method static \CryptoPay\Sdk\Dto\Invoice selectInvoiceNetwork(string $id, array $params)
  * @method static \CryptoPay\Sdk\Dto\Network[] networks()
  * @method static \CryptoPay\Sdk\Dto\Balances balances()
  * @method static \CryptoPay\Sdk\Dto\Paginated transactions(array $filters = [])

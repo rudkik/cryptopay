@@ -18,6 +18,7 @@ Route::prefix('v1')
         Route::get('invoices', [V1\InvoiceController::class, 'index']);
         Route::post('invoices', [V1\InvoiceController::class, 'store'])->middleware('idempotency');
         Route::get('invoices/{invoice}', [V1\InvoiceController::class, 'show']);
+        Route::post('invoices/{invoice}/select', [V1\InvoiceController::class, 'select']);
         Route::post('invoices/{invoice}/cancel', [V1\InvoiceController::class, 'cancel']);
 
         Route::get('networks', [V1\NetworkController::class, 'index']);
@@ -45,6 +46,10 @@ Route::prefix('public')
     ->middleware('throttle:public')
     ->group(function () {
         Route::get('invoices/{invoice}', [PublicApi\InvoiceController::class, 'show']);
+        // Selecting a currency/network allocates the deposit address, so it is
+        // a write on an unauthenticated route: it shares the public limiter and
+        // is guarded to succeed at most once per invoice (SPEC §6.3).
+        Route::post('invoices/{invoice}/select', [PublicApi\InvoiceController::class, 'select']);
     });
 
 /*

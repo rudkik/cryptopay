@@ -81,6 +81,20 @@ class Invoice extends Model
         return $this->expires_at !== null && $this->expires_at->isPast();
     }
 
+    /**
+     * True while the payer still has to pick a currency and network on the
+     * hosted checkout (SPEC §6.3). It is also exactly the window in which
+     * InvoiceService::selectNetwork() will allocate a deposit address, so the
+     * flag the checkout renders and the guard the endpoint enforces cannot
+     * drift apart.
+     */
+    public function needsSelection(): bool
+    {
+        return $this->deposit_address_id === null
+            && $this->status === InvoiceStatus::Pending
+            && ! $this->isExpired();
+    }
+
     /** Contract for the invoice currency on the invoice network. */
     public function tokenContract(): ?TokenContract
     {
@@ -92,10 +106,18 @@ class Invoice extends Model
         return $this->tokenContract()?->decimals ?? 6;
     }
 
-    /** EIP-681 payload for EVM networks, bare address for Tron (SPEC §6.1). */
-    public function qrPayload(): string
+    /**
+     * EIP-681 payload for EVM networks, bare address for Tron (SPEC §6.1).
+     * Null until a deposit address exists — there is nothing to encode yet.
+     */
+    public function qrPayload(): ?string
     {
-        $address = $this->depositAddress?->address ?? '';
+        $address = $this->depositAddress?->address;
+
+        if ($address === null) {
+            return null;
+        }
+
         $contract = $this->tokenContract();
         $network = NetworkRegistry::make()->network($this->network_code);
 

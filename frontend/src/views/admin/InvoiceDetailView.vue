@@ -8,6 +8,7 @@ import {
   Link2,
   RefreshCw,
   RotateCw,
+  Wallet,
   Webhook,
 } from 'lucide-vue-next'
 import AddressDisplay from '@/components/AddressDisplay.vue'
@@ -77,6 +78,13 @@ const qrValue = computed(() => {
   if (!inv?.address) return ''
   const payload = inv.qr_payload ?? ''
   return payload.includes(inv.address) ? payload : inv.address
+})
+
+/** Human network name, or an em dash while the payer has not picked one. */
+const networkLabel = computed(() => {
+  const code = invoice.value?.network
+  if (!code) return '—'
+  return NETWORK_NAMES[code] ?? code
 })
 
 const remaining = computed(() =>
@@ -286,7 +294,14 @@ onMounted(() => void load())
               </div>
               <div class="mt-2.5 flex flex-wrap items-center gap-2">
                 <StatusBadge :status="invoice.status" context="Invoice status" />
-                <NetworkBadge :network="invoice.network" />
+                <NetworkBadge v-if="invoice.network" :network="invoice.network" />
+                <span
+                  v-else-if="invoice.selection_required"
+                  class="chip border-primary/40 bg-primary/15 text-primary-hover"
+                >
+                  Awaiting network selection
+                </span>
+                <span v-else class="chip">Network —</span>
                 <span v-if="invoice.type === 'token_purchase'" class="chip border-accent/30 bg-accent/10 text-accent">
                   Token purchase
                 </span>
@@ -391,16 +406,29 @@ onMounted(() => void load())
         <!-- Payment address -->
         <section class="card flex flex-col items-center gap-4 self-start p-5">
           <h2 class="self-start text-sm font-semibold">Deposit address</h2>
-          <QrCode :value="qrValue" :size="164" label="Deposit address QR code" />
-          <div class="w-full">
-            <div class="flex items-center gap-2 rounded-xl border border-border bg-bg/60 px-3 py-2.5">
-              <code class="mono min-w-0 flex-1 break-all text-[12px]">{{ invoice.address }}</code>
-              <CopyButton :value="invoice.address" label="Address" :size="14" notify />
+          <template v-if="invoice.address">
+            <QrCode :value="qrValue" :size="164" label="Deposit address QR code" />
+            <div class="w-full">
+              <div class="flex items-center gap-2 rounded-xl border border-border bg-bg/60 px-3 py-2.5">
+                <code class="mono min-w-0 flex-1 break-all text-[12px]">{{ invoice.address }}</code>
+                <CopyButton :value="invoice.address" label="Address" :size="14" notify />
+              </div>
+              <p class="mt-2 text-[11px] text-muted">
+                {{ invoice.currency ?? '—' }} on {{ networkLabel }} only.
+              </p>
             </div>
-            <p class="mt-2 text-[11px] text-muted">
-              {{ invoice.currency }} on {{ NETWORK_NAMES[invoice.network] ?? invoice.network }} only.
-            </p>
-          </div>
+          </template>
+          <EmptyState
+            v-else
+            :icon="Wallet"
+            title="No address yet"
+            :description="
+              invoice.selection_required
+                ? 'The payer picks a currency and network on the checkout page — the deposit address is derived then.'
+                : 'This invoice never had a deposit address allocated.'
+            "
+            compact
+          />
         </section>
       </div>
 

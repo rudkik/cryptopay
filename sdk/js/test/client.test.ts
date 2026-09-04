@@ -12,6 +12,7 @@ import {
   textResponse,
   tokenFixture,
   tokenPurchaseFixture,
+  unselectedInvoiceFixture,
 } from './fixtures.js'
 
 type FetchCall = { url: string; init: RequestInit }
@@ -88,6 +89,83 @@ describe('createInvoice', () => {
     await c.createInvoice({ amount: '1', currency: 'USDT', network: 'tron' })
     const headers = calls[0]!.init.headers as Record<string, string>
     expect(headers['Idempotency-Key']).toBeUndefined()
+  })
+})
+
+describe('createInvoice without currency/network', () => {
+  it('omits the pair from the body and returns an invoice awaiting selection', async () => {
+    const { c, calls } = client(() => jsonResponse({ data: unselectedInvoiceFixture }, 201))
+
+    const invoice = await c.createInvoice({ amount: '12.5', external_id: 'probe-1' })
+
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ amount: '12.5', external_id: 'probe-1' })
+
+    expect(invoice.currency).toBeNull()
+    expect(invoice.network).toBeNull()
+    expect(invoice.address).toBeNull()
+    expect(invoice.qr_payload).toBeNull()
+    expect(invoice.selection_required).toBe(true)
+    expect(invoice.status).toBe('pending')
+    // payment_url всё равно есть — на него и отправляют плательщика.
+    expect(invoice.payment_url).toBe(invoiceFixture.payment_url)
+  })
+})
+
+describe('selectInvoiceNetwork', () => {
+  it('POSTs the pair to the select URL and returns the filled-in invoice', async () => {
+    const { c, calls } = client(() =>
+      jsonResponse(
+        invoicePayload({ currency: 'USDC', network: 'bsc', address: '0xabc123', qr_payload: '0xabc123' }),
+      ),
+    )
+
+    const invoice = await c.selectInvoiceNetwork(invoiceFixture.id, { currency: 'USDC', network: 'bsc' })
+
+    expect(calls[0]!.url).toBe(`http://localhost:8095/api/v1/invoices/${invoiceFixture.id}/select`)
+    expect(calls[0]!.init.method).toBe('POST')
+    const headers = calls[0]!.init.headers as Record<string, string>
+    expect(headers['Content-Type']).toBe('application/json')
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ currency: 'USDC', network: 'bsc' })
+
+    expect(invoice.currency).toBe('USDC')
+    expect(invoice.network).toBe('bsc')
+    expect(invoice.address).toBe('0xabc123')
+    expect(invoice.selection_required).toBe(false)
+  })
+
+  it('URL-encodes the id path segment', async () => {
+    const { c, calls } = client(() => jsonResponse(invoicePayload()))
+    await c.selectInvoiceNetwork('a/b c', { currency: 'USDT', network: 'tron' })
+    expect(calls[0]!.url).toBe('http://localhost:8095/api/v1/invoices/a%2Fb%20c/select')
+  })
+
+  it('throws ApiError with code invalid_state and status 409 when the pair is already chosen', async () => {
+    const { c } = client(() => errorResponse('invalid_state', 'Currency and network are already selected', {}, 409))
+    await expect(
+      c.selectInvoiceNetwork(invoiceFixture.id, { currency: 'USDT', network: 'tron' }),
+    ).rejects.toMatchObject({ code: 'invalid_state', status: 409 })
+  })
+
+  it('throws ApiError with code validation_error and details for an unavailable pair', async () => {
+    const { c } = client(() =>
+      errorResponse('validation_error', 'The given data was invalid.', { network: ['The selected network is invalid.'] }, 422),
+    )
+    try {
+      await c.selectInvoiceNetwork(invoiceFixture.id, { currency: 'USDT', network: 'ethereum' })
+      expect.unreachable('should have thrown')
+    } catch (err) {
+      const apiErr = err as ApiError
+      expect(apiErr.isValidationError).toBe(true)
+      expect(apiErr.details.network).toEqual(['The selected network is invalid.'])
+    }
+  })
+
+  it('throws ApiError with code not_found and status 404 for an unknown invoice', async () => {
+    const { c } = client(() => errorResponse('not_found', 'Resource not found.', {}, 404))
+    await expect(c.selectInvoiceNetwork('missing', { currency: 'USDT', network: 'tron' })).rejects.toMatchObject({
+      code: 'not_found',
+      status: 404,
+    })
   })
 })
 

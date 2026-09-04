@@ -147,6 +147,7 @@ export const API_DOCS: DocGroup[] = [
   "is_paid": false,
   "currency": "USDT",
   "network": "tron",
+  "selection_required": false,
   "amount": "100.000000",
   "amount_received": "0",
   "amount_confirmed": "0",
@@ -170,6 +171,11 @@ export const API_DOCS: DocGroup[] = [
             kind: 'text',
             value:
               '`qr_payload` is an EIP-681 URI on EVM networks (`ethereum:{contract}@{chainId}/transfer?address={address}&uint256={amount_raw}`) and the plain address on Tron.',
+          },
+          {
+            kind: 'text',
+            value:
+              '`currency`, `network`, `address` and `qr_payload` are `null` while `selection_required` is `true` — the invoice exists but nobody has picked a currency/network pair yet, so no deposit address has been derived.',
           },
         ],
       },
@@ -215,8 +221,8 @@ export const API_DOCS: DocGroup[] = [
             headers: ['Field', 'Type', 'Notes'],
             rows: [
               ['amount', 'string', 'Required, greater than 0'],
-              ['currency', 'string', 'Required — `USDT` or `USDC`'],
-              ['network', 'string', 'Required — `ethereum`, `bsc` or `tron`'],
+              ['currency', 'string', 'Optional — `USDT` or `USDC`; must be sent together with `network`'],
+              ['network', 'string', 'Optional — `ethereum`, `bsc` or `tron`; must be sent together with `currency`'],
               ['external_id', 'string', 'Your order reference'],
               ['description', 'string', 'Shown on the hosted checkout'],
               ['customer_email', 'string', 'Optional'],
@@ -306,6 +312,49 @@ res = requests.post(
 )
 res.raise_for_status()
 invoice = res.json()`,
+          },
+          {
+            kind: 'text',
+            value:
+              '`amount` is USD-pegged — USDT and USDC are both worth one dollar here — so it never changes with the network the buyer ends up paying on.',
+          },
+          {
+            kind: 'callout',
+            tone: 'info',
+            title: 'Let the payer choose',
+            value:
+              'Omit `currency` and `network` to create a `pending` invoice with `selection_required: true`, no `address` and no `qr_payload`. The hosted checkout then asks the buyer to pick a pair and derives the deposit address at that moment. Send both fields or neither — supplying only one is a `422 validation_error`.',
+          },
+          {
+            kind: 'code',
+            language: 'bash',
+            title: 'Create without a network',
+            code: `curl -X POST https://pay.example.com/api/v1/invoices \\
+  -H "Authorization: Bearer $CRYPTOPAY_KEY" \\
+  -H "Idempotency-Key: order-2" \\
+  -H "Content-Type: application/json" \\
+  -d '{"amount":"100.00","external_id":"order-2"}'
+
+# => { "status": "pending", "selection_required": true, "address": null, … }`,
+          },
+          {
+            kind: 'endpoint',
+            method: 'POST',
+            path: '/api/v1/invoices/{id}/select',
+            summary: 'Pick the currency and network server-side',
+          },
+          {
+            kind: 'text',
+            value:
+              'If you would rather collect the choice in your own UI, post it yourself: the response is the same Invoice object, now with `address`, `qr_payload` and `selection_required: false`. A second call returns `409 invalid_state`, and an unavailable pair `422 validation_error`.',
+          },
+          {
+            kind: 'code',
+            language: 'bash',
+            code: `curl -X POST https://pay.example.com/api/v1/invoices/$ID/select \\
+  -H "Authorization: Bearer $CRYPTOPAY_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"currency":"USDT","network":"tron"}'`,
           },
         ],
       },
@@ -458,12 +507,24 @@ invoice = res.json()`,
             items: [
               'Create the invoice with `success_url` and `cancel_url`.',
               'Redirect the buyer to `payment_url`.',
+              'If the invoice was created without `currency`/`network`, the buyer picks the pair on the page and the deposit address appears without a reload.',
               'The buyer sends the exact amount to the displayed address.',
               'When the payment confirms, the page shows a receipt and links to `success_url`.',
               'Fulfil the order from the `invoice.paid` webhook — never from the redirect alone.',
             ],
           },
           { kind: 'endpoint', method: 'GET', path: '/api/public/invoices/{id}', summary: 'Public status (no auth)' },
+          {
+            kind: 'endpoint',
+            method: 'POST',
+            path: '/api/public/invoices/{id}/select',
+            summary: 'Payer picks currency and network (no auth)',
+          },
+          {
+            kind: 'text',
+            value:
+              'The public payload carries `selection_required` and an `options` array (`network`, `network_name`, `currency`, `standard`, `confirmations_required`) describing the pairs on offer. The checkout page posts the buyer\'s pick to the endpoint above; it is rate limited per IP and answers `409 invalid_state` once a pair is already locked in.',
+          },
           {
             kind: 'callout',
             tone: 'warning',

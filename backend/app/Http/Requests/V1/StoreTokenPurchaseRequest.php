@@ -18,8 +18,9 @@ class StoreTokenPurchaseRequest extends FormRequest
             'token_id' => ['required', 'uuid'],
             'token_amount' => ['required_without:pay_amount', 'nullable', 'regex:/^\d{1,10}(\.\d{1,18})?$/', new PositiveAmount(max: '1000000000000')],
             'pay_amount' => ['required_without:token_amount', 'nullable', 'regex:/^\d{1,10}(\.\d{1,18})?$/', new PositiveAmount(min: '0.000001', max: '1000000000')],
-            'currency' => ['required', Rule::in(array_column(Currency::cases(), 'value'))],
-            'network' => ['required', Rule::in(array_column(NetworkCode::cases(), 'value'))],
+            // Both or neither, exactly as on POST /v1/invoices.
+            'currency' => ['required_with:network', 'nullable', Rule::in(array_column(Currency::cases(), 'value'))],
+            'network' => ['required_with:currency', 'nullable', Rule::in(array_column(NetworkCode::cases(), 'value'))],
             'customer_id' => ['required', 'string', 'max:255'],
             'customer_email' => ['nullable', 'email', 'max:255'],
             'external_id' => ['nullable', 'string', 'max:255'],

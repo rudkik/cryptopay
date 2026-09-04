@@ -28,8 +28,8 @@ $client = new Client(
 try {
     $invoice = $client->createInvoice([
         'amount' => '12.50',        // decimal string, не float
-        'currency' => 'USDT',       // USDT | USDC
-        'network' => 'tron',        // ethereum | bsc | tron
+        'currency' => 'USDT',       // USDT | USDC — необязателен, см. раздел ниже
+        'network' => 'tron',        // ethereum | bsc | tron — необязателен, см. раздел ниже
         'external_id' => 'order-1042',
         'description' => 'Заказ #1042',
         'customer_email' => 'buyer@example.com',
@@ -60,6 +60,69 @@ hosted-страница оплаты со встроенным QR-кодом и 
 header('Location: '.$invoice->paymentUrl);
 exit;
 ```
+
+## Плательщик сам выбирает валюту и сеть
+
+`currency` и `network` необязательны: либо передаёте оба, либо ни одного
+(ровно одно из двух — `422 validation_error`). Суммы номинированы в USD и от
+сети не зависят (USDT = USDC = 1 USD), поэтому `amount` в обоих случаях один
+и тот же.
+
+Счёт, созданный без пары, приходит со статусом `pending`, но ещё без адреса:
+
+```php
+$invoice = $client->createInvoice([
+    'amount' => '12.50',
+    'external_id' => 'order-1042',
+], idempotencyKey: bin2hex(random_bytes(16)));
+
+$invoice->currency;          // null
+$invoice->network;           // null
+$invoice->address;           // null — адрес выпускается только после выбора
+$invoice->qrPayload;         // null
+$invoice->selectionRequired; // true
+$invoice->needsSelection();  // true — то же самое, но методом
+
+header('Location: '.$invoice->paymentUrl); // валюту и сеть выберет покупатель
+exit;
+```
+
+Hosted-страница оплаты сама покажет выбор валюты и сети (она ходит в публичный
+`POST /api/public/invoices/{id}/select`, ключ мерчанта для этого не нужен) — то
+есть в самом частом сценарии от вас требуется только редирект на `paymentUrl`.
+
+Если выбор делается в вашем собственном интерфейсе, вызовите
+`selectInvoiceNetwork()` — метод вернёт тот же счёт, уже с адресом:
+
+```php
+use CryptoPay\Sdk\Exception\ApiException;
+
+try {
+    $invoice = $client->selectInvoiceNetwork($invoice->id, [
+        'currency' => 'USDC',   // USDT | USDC
+        'network' => 'bsc',     // ethereum | bsc | tron
+    ]);
+
+    $invoice->address;           // адрес для перевода
+    $invoice->qrPayload;         // payload для QR-кода
+    $invoice->selectionRequired; // false
+} catch (ApiException $e) {
+    $e->getErrorCode();
+    // 'invalid_state'     (409) — пара уже выбрана, счёт не в pending или просрочен
+    // 'validation_error'  (422) — неизвестная или отключённая пара валюта/сеть
+    // 'not_found'         (404) — счёта с таким id нет
+}
+```
+
+Выбор делается один раз: повторный вызов вернёт `409 invalid_state`.
+
+То же правило «оба или ни одного» действует для `createTokenPurchase()` —
+счёт покупки токенов создаётся без пары и доводится до адреса тем же
+`selectInvoiceNetwork()` (по `$result->invoice->id`).
+
+**Поля, которые теперь могут быть `null`:** `currency`, `network`, `address`,
+`qrPayload` у `Invoice` (и `currency` у `TokenPurchase`) — до тех пор, пока
+пара не выбрана. `amount`, `paymentUrl`, `expiresAt` заполнены всегда.
 
 ## Проверка вебхука на чистом PHP
 
@@ -200,8 +263,8 @@ $balances = CryptoPay::balances();
 $result = $client->createTokenPurchase([
     'token_id' => 'tok_123',
     'token_amount' => '100',       // либо pay_amount
-    'currency' => 'USDT',
-    'network' => 'tron',
+    'currency' => 'USDT',          // необязателен — но только вместе с network
+    'network' => 'tron',           // необязателен — но только вместе с currency
     'customer_id' => 'user-42',    // обязателен — по нему учитываются holdings
     'customer_email' => 'buyer@example.com',
 ], idempotencyKey: 'unique-key-per-purchase');
@@ -272,6 +335,7 @@ $invoice = $client->createInvoice($params, $idempotencyKey);
 | `getInvoice(string $id)` | `Invoice` | Получить счёт по id |
 | `listInvoices(array $filters = [])` | `Paginated<Invoice>` | Список счетов (`status`, `external_id`, `network`, `currency`, `from`, `to`, `per_page`, `page`) |
 | `cancelInvoice(string $id)` | `Invoice` | Отменить счёт (только из `pending`) |
+| `selectInvoiceNetwork(string $id, array $params)` | `Invoice` | Выбрать `currency`/`network` для счёта, созданного без них |
 | `networks()` | `Network[]` | Список включённых сетей и их токенов |
 | `balances()` | `Balances` | Балансы по валюте/сети + итоги по валюте |
 | `transactions(array $filters = [])` | `Paginated<Transaction>` | Список транзакций (`invoice_id`, `network`, `status`, `per_page`, `page`) |
@@ -294,6 +358,10 @@ $invoice = $client->createInvoice($params, $idempotencyKey);
 
 Каждый DTO — `final readonly class` с `::fromArray()` и `->toArray()`
 (возвращает исходный «сырой» ответ API один в один).
+
+У `Invoice` есть статусные хелперы `isPaid()`, `isPending()`, `isCancelled()`,
+`isExpired()` и `needsSelection()` (последний — синоним свойства
+`selectionRequired`).
 
 ## Примеры
 

@@ -24,6 +24,9 @@ class InvoiceResource extends JsonResource
             'external_id' => $this->external_id,
             'status' => $this->status->value,
             'is_paid' => $this->status->isPaid(),
+            // Null until the payer picks them on the hosted checkout; the flag
+            // says which of the two shapes this invoice is in (SPEC §6.3).
+            'selection_required' => $this->needsSelection(),
             'currency' => $this->currency,
             'network' => $this->network_code,
             'amount' => Money::format($this->amount, $decimals),

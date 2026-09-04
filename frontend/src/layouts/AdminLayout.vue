@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeftRight,
   BookOpen,
+  Braces,
   ChevronDown,
   Coins,
   FileText,
@@ -64,6 +65,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { label: 'Networks', to: '/admin/networks', icon: Network },
       { label: 'Admin users', to: '/admin/users', icon: Users, adminOnly: true },
       { label: 'API docs', to: '/admin/docs', icon: BookOpen },
+      { label: 'Swagger', to: '/admin/swagger', icon: Braces },
     ],
   },
 ]

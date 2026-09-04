@@ -19,6 +19,7 @@ class PublicInvoiceResource extends JsonResource
     public function toArray(Request $request): array
     {
         $registry = NetworkRegistry::make();
+        $selectionRequired = $this->needsSelection();
         $network = $registry->network($this->network_code);
         $contract = $registry->contract($this->network_code, $this->currency);
         $decimals = $contract?->decimals ?? 6;
@@ -30,6 +31,10 @@ class PublicInvoiceResource extends JsonResource
             'external_id' => $this->external_id,
             'status' => $this->status->value,
             'is_paid' => $this->status->isPaid(),
+            'selection_required' => $selectionRequired,
+            // What the checkout renders its currency/network picker from. Built
+            // only while it is needed — this endpoint is polled every 5s.
+            'options' => $selectionRequired ? $registry->selectionOptions() : [],
             'currency' => $this->currency,
             'network' => $this->network_code,
             'network_name' => $network?->name,

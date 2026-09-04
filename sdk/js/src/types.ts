@@ -58,8 +58,16 @@ export interface Invoice {
   external_id: string | null
   status: InvoiceStatus
   is_paid: boolean
-  currency: Currency
-  network: NetworkCode
+  /** `null`, пока валюта не выбрана — см. {@link Invoice.selection_required}. */
+  currency: Currency | null
+  /** `null`, пока сеть не выбрана — см. {@link Invoice.selection_required}. */
+  network: NetworkCode | null
+  /**
+   * Счёт создан без пары currency/network — её выбирает плательщик на hosted-странице
+   * оплаты (или мерчант через `selectInvoiceNetwork()`). Пока `true`, поля `currency`,
+   * `network`, `address` и `qr_payload` равны `null`: адрес выпускается только после выбора.
+   */
+  selection_required: boolean
   /** Decimal string. */
   amount: string
   /** Decimal string. */
@@ -154,7 +162,8 @@ export interface TokenPurchase {
   price_usd: string
   /** Decimal string. */
   pay_amount: string
-  currency: Currency
+  /** `null`, пока пара currency/network не выбрана — см. {@link Invoice.selection_required}. */
+  currency: Currency | null
   status: TokenPurchaseStatus
   completed_at: string | null
   created_at: string
@@ -244,10 +253,16 @@ export interface Paginated<T> {
 /* ------------------------------------------------------------------ */
 
 export interface CreateInvoiceParams {
-  /** Decimal string, > 0. */
+  /** Decimal string, > 0. Сумма номинирована в USD и от сети не зависит (USDT = USDC = 1 USD). */
   amount: string
-  currency: CurrencyParam
-  network: NetworkCodeParam
+  /**
+   * Передаются либо ОБА поля (`currency` + `network`), либо НИ ОДНОГО: ровно одно из двух —
+   * `422 validation_error`. Без пары счёт создаётся с `selection_required: true`, и валюту
+   * с сетью выбирает плательщик на hosted-странице оплаты.
+   */
+  currency?: CurrencyParam
+  /** Правило «оба или ни одного» — см. {@link CreateInvoiceParams.currency}. */
+  network?: NetworkCodeParam
   external_id?: string
   description?: string
   customer_email?: string
@@ -257,6 +272,12 @@ export interface CreateInvoiceParams {
   cancel_url?: string
   /** Секунды, по умолчанию 3600, максимум 86400. */
   expires_in?: number
+}
+
+/** Тело `POST /invoices/{id}/select` — выбор валюты и сети для счёта, созданного без них. */
+export interface SelectInvoiceNetworkParams {
+  currency: CurrencyParam
+  network: NetworkCodeParam
 }
 
 export interface ListInvoicesFilters {
@@ -281,8 +302,13 @@ export interface ListTransactionsFilters {
 
 export interface CreateTokenPurchaseParamsBase {
   token_id: string
-  currency: CurrencyParam
-  network: NetworkCodeParam
+  /**
+   * Как и в {@link CreateInvoiceParams}: либо ОБА поля (`currency` + `network`), либо НИ ОДНОГО.
+   * Без пары счёт покупки создаётся с `selection_required: true`.
+   */
+  currency?: CurrencyParam
+  /** Правило «оба или ни одного» — см. {@link CreateTokenPurchaseParamsBase.currency}. */
+  network?: NetworkCodeParam
   customer_id: string
   customer_email?: string
   external_id?: string

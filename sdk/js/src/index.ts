@@ -34,6 +34,7 @@ export type {
   PaginationLinks,
   Paginated,
   CreateInvoiceParams,
+  SelectInvoiceNetworkParams,
   ListInvoicesFilters,
   ListTransactionsFilters,
   CreateTokenPurchaseParamsBase,

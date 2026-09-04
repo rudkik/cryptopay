@@ -19,8 +19,11 @@ class StoreInvoiceRequest extends FormRequest
             // amount can never be created, and never below the smallest unit
             // a 6-decimal token can actually settle.
             'amount' => ['required', 'regex:/^\d{1,10}(\.\d{1,18})?$/', new PositiveAmount(min: '0.000001', max: '1000000000')],
-            'currency' => ['required', Rule::in(array_column(Currency::cases(), 'value'))],
-            'network' => ['required', Rule::in(array_column(NetworkCode::cases(), 'value'))],
+            // Optional, but they travel together: omit both and the payer
+            // picks on the hosted checkout (SPEC §6.3); sending only one is a
+            // half-configured invoice, not a default, so it is rejected.
+            'currency' => ['required_with:network', 'nullable', Rule::in(array_column(Currency::cases(), 'value'))],
+            'network' => ['required_with:currency', 'nullable', Rule::in(array_column(NetworkCode::cases(), 'value'))],
             'external_id' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:2000'],
             'customer_email' => ['nullable', 'email', 'max:255'],

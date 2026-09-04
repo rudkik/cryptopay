@@ -9,6 +9,7 @@ export const invoiceFixture: Invoice = {
   is_paid: false,
   currency: 'USDT',
   network: 'tron',
+  selection_required: false,
   amount: '12.500000',
   amount_received: '0.000000',
   amount_confirmed: '0.000000',
@@ -30,6 +31,16 @@ export const invoiceFixture: Invoice = {
 
 export function invoicePayload(overrides: Partial<Invoice> = {}): unknown {
   return { data: { ...invoiceFixture, ...overrides } }
+}
+
+/** Счёт, созданный без currency/network — плательщик выбирает пару сам. */
+export const unselectedInvoiceFixture: Invoice = {
+  ...invoiceFixture,
+  currency: null,
+  network: null,
+  address: null,
+  qr_payload: null,
+  selection_required: true,
 }
 
 export const transactionFixture: Transaction = {

@@ -6,6 +6,7 @@ use App\Enums\InvoiceStatus;
 use App\Enums\InvoiceType;
 use App\Enums\TransactionStatus;
 use App\Exceptions\InvalidStateException;
+use App\Exceptions\NotFoundException;
 use App\Models\Invoice;
 use App\Models\Merchant;
 use App\Support\Money;
@@ -23,31 +24,28 @@ class InvoiceService
     ) {}
 
     /**
-     * @param  array{amount: string, currency: string, network: string, external_id?: ?string,
+     * `currency` and `network` are optional and travel together: omit both and
+     * the invoice is created with nothing selected and no deposit address, for
+     * the payer to choose on the hosted checkout (SPEC §6.3).
+     *
+     * @param  array{amount: string, currency?: ?string, network?: ?string, external_id?: ?string,
      *   description?: ?string, customer_email?: ?string, customer_id?: ?string, metadata?: ?array,
      *   success_url?: ?string, cancel_url?: ?string, expires_in?: ?int}  $data
      */
     public function create(Merchant $merchant, array $data, InvoiceType $type = InvoiceType::Payment): Invoice
     {
-        $networkCode = $data['network'];
-        $currency = $data['currency'];
+        $networkCode = $data['network'] ?? null;
+        $currency = $data['currency'] ?? null;
 
-        $registry = NetworkRegistry::make();
-        $network = $registry->network($networkCode);
+        $depositAddress = null;
 
-        if (! $network || ! $network->is_enabled) {
-            throw new InvalidStateException("Network [{$networkCode}] is not available.");
+        if ($networkCode !== null && $currency !== null) {
+            $this->assertPairAvailable($networkCode, $currency);
+
+            // Allocated outside the invoice transaction: it performs an HTTP call to
+            // the watcher and holds a row lock on `wallets` for its duration.
+            $depositAddress = $this->addresses->allocate($networkCode, $merchant);
         }
-
-        $contract = $registry->contract($networkCode, $currency);
-
-        if (! $contract || ! $contract->is_enabled) {
-            throw new InvalidStateException("{$currency} is not available on [{$networkCode}].");
-        }
-
-        // Allocated outside the invoice transaction: it performs an HTTP call to
-        // the watcher and holds a row lock on `wallets` for its duration.
-        $depositAddress = $this->addresses->allocate($networkCode, $merchant);
 
         $expiresIn = (int) ($data['expires_in'] ?? 3600);
 
@@ -58,7 +56,7 @@ class InvoiceService
                 'external_id' => $data['external_id'] ?? null,
                 'currency' => $currency,
                 'network_code' => $networkCode,
-                'deposit_address_id' => $depositAddress->id,
+                'deposit_address_id' => $depositAddress?->id,
                 'amount' => Money::normalize($data['amount']),
                 'amount_received' => Money::zero(),
                 'amount_confirmed' => Money::zero(),
@@ -73,13 +71,106 @@ class InvoiceService
             ]);
 
             // The address belongs to this invoice forever; it is never reused.
-            $depositAddress->forceFill(['invoice_id' => $invoice->id])->save();
+            $depositAddress?->forceFill(['invoice_id' => $invoice->id])->save();
 
             $invoice->setRelation('depositAddress', $depositAddress);
             $invoice->setRelation('merchant', $merchant);
 
             return $invoice;
         });
+    }
+
+    /**
+     * Record the currency and network a payer (or the merchant's own UI) picked
+     * for an invoice created without them, and allocate its deposit address.
+     *
+     * At most once per invoice, by construction: the invoice row is locked and
+     * re-checked *inside* the transaction, and the watcher round-trip happens
+     * under that lock. A concurrent double-submit therefore blocks rather than
+     * racing, and the loser sees the invoice already selected and gets a 409 —
+     * the alternative (checking first, allocating after) would hand out two
+     * addresses and orphan one of them, along with its derivation index.
+     */
+    public function selectNetwork(Invoice $invoice, string $currency, string $networkCode): Invoice
+    {
+        // Cheap rejections first, so an unavailable pair never reaches the lock.
+        $this->assertPairAvailable($networkCode, $currency);
+        $this->assertSelectable($invoice);
+
+        $selected = DB::transaction(function () use ($invoice, $currency, $networkCode) {
+            $locked = Invoice::query()->whereKey($invoice->id)->lockForUpdate()->first();
+
+            if (! $locked) {
+                throw new NotFoundException;
+            }
+
+            $this->assertSelectable($locked);
+
+            $locked->loadMissing('merchant');
+
+            $depositAddress = $this->addresses->allocate($networkCode, $locked->merchant);
+
+            $locked->forceFill([
+                'currency' => $currency,
+                'network_code' => $networkCode,
+                'deposit_address_id' => $depositAddress->id,
+            ])->save();
+
+            // The address belongs to this invoice forever; it is never reused.
+            $depositAddress->forceFill(['invoice_id' => $locked->id])->save();
+
+            $locked->setRelation('depositAddress', $depositAddress);
+
+            return $locked;
+        });
+
+        // A token purchase is quoted in its invoice's currency (SPEC §4).
+        if ($selected->type === InvoiceType::TokenPurchase) {
+            $selected->tokenPurchase()->update(['currency' => $currency]);
+        }
+
+        return $selected;
+    }
+
+    /** The network is live and the currency actually trades on it (SPEC §2). */
+    private function assertPairAvailable(string $networkCode, string $currency): void
+    {
+        $registry = NetworkRegistry::make();
+        $network = $registry->network($networkCode);
+
+        if (! $network || ! $network->is_enabled) {
+            throw new InvalidStateException("Network [{$networkCode}] is not available.");
+        }
+
+        $contract = $registry->contract($networkCode, $currency);
+
+        if (! $contract || ! $contract->is_enabled) {
+            throw new InvalidStateException("{$currency} is not available on [{$networkCode}].");
+        }
+    }
+
+    private function assertSelectable(Invoice $invoice): void
+    {
+        if ($invoice->deposit_address_id !== null) {
+            throw new InvalidStateException(
+                'The currency and network for this invoice have already been selected.',
+                ['status' => [$invoice->status->value]],
+            );
+        }
+
+        if ($invoice->status !== InvoiceStatus::Pending) {
+            throw new InvalidStateException(
+                "Only pending invoices accept a currency and network; this one is [{$invoice->status->value}].",
+                ['status' => [$invoice->status->value]],
+            );
+        }
+
+        if ($invoice->isExpired()) {
+            throw new InvalidStateException(
+                'This invoice has expired and no longer accepts a currency and network.',
+                ['status' => [$invoice->status->value]],
+            );
+        }
     }
 
     public function cancel(Invoice $invoice): Invoice
@@ -119,12 +210,19 @@ class InvoiceService
         // TransactionIngestService::credit()), but it must never settle a USDT
         // invoice — the two are not interchangeable just because they are both
         // "about a dollar".
-        $totals = $invoice->transactions()
-            ->where('currency', $invoice->currency)
-            ->selectRaw('status, count(*) as cnt, sum(amount) as total')
-            ->groupBy('status')
-            ->get()
-            ->keyBy(fn ($row) => is_string($row->status) ? $row->status : $row->status->value);
+        //
+        // An invoice with no currency has no deposit address either, so nothing
+        // can ever have been sent to it: skip the query rather than let
+        // `where('currency', null)` become `currency is null` and match rows by
+        // accident.
+        $totals = $invoice->currency === null
+            ? collect()
+            : $invoice->transactions()
+                ->where('currency', $invoice->currency)
+                ->selectRaw('status, count(*) as cnt, sum(amount) as total')
+                ->groupBy('status')
+                ->get()
+                ->keyBy(fn ($row) => is_string($row->status) ? $row->status : $row->status->value);
 
         $confirmed = Money::normalize($totals->get(TransactionStatus::Confirmed->value)?->total ?? 0);
         $detected = Money::normalize($totals->get(TransactionStatus::Detected->value)?->total ?? 0);
