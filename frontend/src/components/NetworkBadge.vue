@@ -36,7 +36,7 @@ const standard = computed(() => SHORT[props.network] ?? '')
     class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-surface-2 font-medium text-text"
     :class="size === 'sm' ? 'py-0.5 pl-1 pr-2.5 text-[11px]' : 'py-1 pl-1.5 pr-3 text-xs'"
   >
-    <NetworkIcon :network="network" :size="16" />
+    <NetworkIcon :network="network" :size="size === 'sm' ? 18 : 22" />
     {{ compact ? standard || label : label }}
   </span>
 </template>

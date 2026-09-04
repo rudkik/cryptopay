@@ -3,7 +3,7 @@ import CryptoLogo from './icons/CryptoLogo.vue'
 
 /** Token mark for a currency code (`USDT` / `USDC`). */
 withDefaults(defineProps<{ currency: string | null | undefined; size?: number; title?: string }>(), {
-  size: 16,
+  size: 20,
 })
 </script>
 

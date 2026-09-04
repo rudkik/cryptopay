@@ -120,7 +120,7 @@ onMounted(() => {
       <StatTile label="24h volume" :icon="TrendingUp" :loading="loading" tone="success">
         <div class="space-y-1">
           <div><AmountDisplay :value="stats?.volume_24h?.USDT" currency="USDT" size="lg" :max-decimals="2" logo /></div>
-          <div><AmountDisplay :value="stats?.volume_24h?.USDC" currency="USDC" size="sm" :max-decimals="2" muted logo /></div>
+          <div><AmountDisplay :value="stats?.volume_24h?.USDC" currency="USDC" size="lg" :max-decimals="2" logo /></div>
         </div>
       </StatTile>
 

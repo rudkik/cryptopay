@@ -7,7 +7,7 @@ import type { NetworkCode } from '@/api/types'
  * real chain logo (see `icons/CryptoLogo.vue`) instead of a hand-drawn glyph.
  */
 withDefaults(defineProps<{ network: NetworkCode | string; size?: number; title?: string }>(), {
-  size: 16,
+  size: 20,
 })
 </script>
 

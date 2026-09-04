@@ -198,7 +198,7 @@ onMounted(() => {
             <span
               class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface"
             >
-              <NetworkIcon :network="network.code" :size="24" />
+              <NetworkIcon :network="network.code" :size="32" />
             </span>
             <div class="min-w-0">
               <h2 class="truncate text-sm font-semibold">{{ network.name }}</h2>
@@ -335,7 +335,7 @@ onMounted(() => {
               >
                 <div class="flex items-center justify-between gap-3">
                   <span class="inline-flex items-center gap-2 text-sm font-semibold">
-                    <CoinLogo :currency="token.symbol" :size="20" />
+                    <CoinLogo :currency="token.symbol" :size="26" />
                     {{ token.symbol }}
                   </span>
                   <label class="flex cursor-pointer items-center gap-2 text-xs text-muted">

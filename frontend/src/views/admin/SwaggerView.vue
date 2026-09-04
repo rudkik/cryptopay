@@ -405,20 +405,58 @@ onBeforeUnmount(() => {
   background: rgba(28, 27, 31, 0.35);
 }
 
-/* --- Misc chrome: swagger-ui pads for a standalone page. */
+/* --- Misc chrome: keep swagger-ui's own breathing room inside our card. */
 .swagger-shell :deep(.swagger-ui .wrapper) {
-  padding: 0;
+  padding: 0 24px;
   max-width: none;
 }
 .swagger-shell :deep(.swagger-ui .information-container) {
   padding: 0;
 }
 .swagger-shell :deep(.swagger-ui .info) {
-  margin: 1.25rem 0;
+  margin: 28px 0;
+}
+.swagger-shell :deep(.swagger-ui .info .title) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.swagger-shell :deep(.swagger-ui .info .title small) {
+  top: 0;
+}
+.swagger-shell :deep(.swagger-ui .info pre),
+.swagger-shell :deep(.swagger-ui .markdown pre),
+.swagger-shell :deep(.swagger-ui .renderedMarkdown pre) {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--cp-surface-2);
+  white-space: pre-wrap;
 }
 .swagger-shell :deep(.swagger-ui .scheme-container) {
-  margin: 0 0 1.25rem;
-  padding: 1rem;
+  margin: 0 0 20px;
+  padding: 20px 24px;
+  border-radius: 12px;
+  border: 1px solid var(--cp-border);
+  background: var(--cp-surface-2);
+  box-shadow: none;
+}
+.swagger-shell :deep(.swagger-ui .opblock-tag-section) {
+  padding: 0 0 8px;
+}
+.swagger-shell :deep(.swagger-ui .opblock-tag) {
+  padding: 10px 12px;
+}
+.swagger-shell :deep(.swagger-ui .opblock) {
+  margin: 0 0 12px;
+}
+.swagger-shell :deep(.swagger-ui .opblock .opblock-summary) {
+  padding: 6px 10px;
+}
+.swagger-shell :deep(.swagger-ui .opblock .opblock-section-header) {
+  padding: 10px 20px;
+  box-shadow: none;
+  border-bottom: 1px solid var(--cp-border);
 }
 .swagger-shell :deep(.swagger-ui .servers-title) {
   color: var(--cp-text);

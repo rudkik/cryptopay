@@ -72,7 +72,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             class="flex items-center justify-between gap-3 rounded-lg px-1.5 py-2 hover:bg-surface-2"
           >
             <span class="flex min-w-0 items-center gap-2">
-              <NetworkIcon :network="network.code" :size="16" />
+              <NetworkIcon :network="network.code" :size="20" />
               <span class="truncate text-sm">{{ network.name }}</span>
             </span>
             <span class="flex shrink-0 items-center gap-2 text-right">

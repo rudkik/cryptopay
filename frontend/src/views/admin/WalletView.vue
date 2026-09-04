@@ -460,7 +460,7 @@ onMounted(async () => {
             <span
               class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface"
             >
-              <NetworkIcon :network="wallet.network" :size="24" />
+              <NetworkIcon :network="wallet.network" :size="32" />
             </span>
             <div class="min-w-0">
               <h2 class="truncate text-sm font-semibold">{{ wallet.network_name }}</h2>

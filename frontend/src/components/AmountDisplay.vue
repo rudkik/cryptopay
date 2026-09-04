@@ -29,10 +29,10 @@ const SIZES: Record<NonNullable<typeof props.size>, string> = {
 }
 
 const LOGO_SIZES: Record<NonNullable<typeof props.size>, number> = {
-  sm: 13,
-  md: 14,
-  lg: 18,
-  xl: 26,
+  sm: 18,
+  md: 20,
+  lg: 24,
+  xl: 36,
 }
 </script>
 

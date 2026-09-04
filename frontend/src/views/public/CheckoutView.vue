@@ -488,7 +488,7 @@ onMounted(async () => {
                     <span
                       class="flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-center text-sm font-medium text-muted transition-colors peer-hover:bg-surface peer-hover:text-text peer-checked:bg-primary peer-checked:text-primary-on peer-checked:shadow-glow-sm peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface"
                     >
-                      <CoinLogo :currency="currency" :size="18" />
+                      <CoinLogo :currency="currency" :size="26" />
                       {{ currency }}
                     </span>
                   </label>
@@ -525,7 +525,7 @@ onMounted(async () => {
                           : 'border-border bg-surface hover:border-primary/50 hover:bg-surface-2'
                       "
                     >
-                      <NetworkIcon :network="option.network" :size="28" />
+                      <NetworkIcon :network="option.network" :size="40" />
                       <span class="min-w-0 flex-1">
                         <span class="flex flex-wrap items-baseline gap-x-1.5">
                           <span class="text-sm font-medium text-text">{{ option.network_name }}</span>
