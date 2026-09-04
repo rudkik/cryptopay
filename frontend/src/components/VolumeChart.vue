@@ -23,12 +23,19 @@ const props = defineProps<{ points: DashboardChartPoint[] }>()
 
 const canvas = ref()
 
+/** Light palette (SPEC §9): USDT rides the violet primary, USDC the teal accent. */
+const SERIES = { usdt: '#6d4df2', usdc: '#0ea5a4' } as const
+const INK = '#63616c'
+const GRID = '#e5e2d9'
+const SURFACE = '#ffffff'
+
 function gradient(color: string) {
   return (context: ScriptableContext<'line'>) => {
     const { ctx, chartArea } = context.chart
     if (!chartArea) return 'transparent'
     const fill = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
-    fill.addColorStop(0, `${color}59`)
+    // Gentle wash on an off-white ground — a heavy fill muddies the grid.
+    fill.addColorStop(0, `${color}2e`)
     fill.addColorStop(1, `${color}00`)
     return fill
   }
@@ -40,29 +47,29 @@ const chartData = computed<ChartData<'line'>>(() => ({
     {
       label: 'USDT',
       data: props.points.map((p) => Number(p.USDT ?? 0)),
-      borderColor: '#8b5cf6',
-      backgroundColor: gradient('#8b5cf6'),
+      borderColor: SERIES.usdt,
+      backgroundColor: gradient(SERIES.usdt),
       borderWidth: 2,
       fill: true,
       tension: 0.35,
       pointRadius: 0,
       pointHoverRadius: 4,
-      pointHoverBackgroundColor: '#8b5cf6',
-      pointHoverBorderColor: '#0a0613',
+      pointHoverBackgroundColor: SERIES.usdt,
+      pointHoverBorderColor: SURFACE,
       pointHoverBorderWidth: 2,
     },
     {
       label: 'USDC',
       data: props.points.map((p) => Number(p.USDC ?? 0)),
-      borderColor: '#d946ef',
-      backgroundColor: gradient('#d946ef'),
+      borderColor: SERIES.usdc,
+      backgroundColor: gradient(SERIES.usdc),
       borderWidth: 2,
       fill: true,
       tension: 0.35,
       pointRadius: 0,
       pointHoverRadius: 4,
-      pointHoverBackgroundColor: '#d946ef',
-      pointHoverBorderColor: '#0a0613',
+      pointHoverBackgroundColor: SERIES.usdc,
+      pointHoverBorderColor: SURFACE,
       pointHoverBorderWidth: 2,
     },
   ],
@@ -77,21 +84,35 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
       display: true,
       align: 'end',
       labels: {
-        color: '#9d94b8',
+        color: INK,
         boxWidth: 8,
         boxHeight: 8,
         usePointStyle: true,
         pointStyle: 'circle',
         font: { family: 'Inter, sans-serif', size: 11 },
         padding: 16,
+        /*
+         * The dataset fill is a gradient callback that resolves to `transparent`
+         * while the legend is drawn, which left hollow rings. Paint the legend
+         * dots from the line colour instead.
+         */
+        generateLabels: (chart) =>
+          chart.data.datasets.map((dataset, index) => ({
+            text: String(dataset.label ?? ''),
+            fillStyle: dataset.borderColor as string,
+            strokeStyle: dataset.borderColor as string,
+            lineWidth: 0,
+            hidden: !chart.isDatasetVisible(index),
+            datasetIndex: index,
+          })),
       },
     },
     tooltip: {
-      backgroundColor: '#1e1438',
-      borderColor: '#2d2050',
+      backgroundColor: SURFACE,
+      borderColor: GRID,
       borderWidth: 1,
-      titleColor: '#ece8f6',
-      bodyColor: '#ece8f6',
+      titleColor: '#1c1b1f',
+      bodyColor: '#1c1b1f',
       padding: 10,
       cornerRadius: 10,
       displayColors: true,
@@ -108,17 +129,17 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
       grid: { display: false },
       border: { display: false },
       ticks: {
-        color: '#9d94b8',
+        color: INK,
         font: { family: 'Inter, sans-serif', size: 10 },
         maxRotation: 0,
         autoSkipPadding: 24,
       },
     },
     y: {
-      grid: { color: 'rgba(45,32,80,.55)' },
+      grid: { color: GRID },
       border: { display: false },
       ticks: {
-        color: '#9d94b8',
+        color: INK,
         font: { family: 'Inter, sans-serif', size: 10 },
         maxTicksLimit: 5,
         callback: (value) => formatAmount(String(value), { maxDecimals: 0 }),

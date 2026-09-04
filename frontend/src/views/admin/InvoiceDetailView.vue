@@ -290,19 +290,19 @@ onMounted(() => void load())
             <div>
               <p class="text-xs uppercase tracking-wide text-muted">Amount</p>
               <div class="mt-1.5">
-                <AmountDisplay :value="invoice.amount" :currency="invoice.currency" size="lg" />
+                <AmountDisplay :value="invoice.amount" :currency="invoice.currency" size="lg" logo />
               </div>
               <div class="mt-2.5 flex flex-wrap items-center gap-2">
                 <StatusBadge :status="invoice.status" context="Invoice status" />
                 <NetworkBadge v-if="invoice.network" :network="invoice.network" />
                 <span
                   v-else-if="invoice.selection_required"
-                  class="chip border-primary/40 bg-primary/15 text-primary-hover"
+                  class="chip border-primary/25 bg-primary-soft text-primary-hover"
                 >
                   Awaiting network selection
                 </span>
                 <span v-else class="chip">Network —</span>
-                <span v-if="invoice.type === 'token_purchase'" class="chip border-accent/30 bg-accent/10 text-accent">
+                <span v-if="invoice.type === 'token_purchase'" class="chip border-accent/25 bg-accent-soft text-accent-ink">
                   Token purchase
                 </span>
               </div>
@@ -320,7 +320,7 @@ onMounted(() => void load())
           </div>
 
           <!-- Progress -->
-          <div class="space-y-2.5 rounded-xl border border-border bg-surface-2/40 p-4">
+          <div class="space-y-2.5 rounded-xl border border-border bg-surface-2 p-4">
             <div class="flex flex-wrap items-baseline justify-between gap-2 text-xs">
               <span class="text-muted">Confirmed</span>
               <span class="flex items-baseline gap-1.5">
@@ -396,7 +396,7 @@ onMounted(() => void load())
               <dt class="text-xs text-muted">Metadata</dt>
               <dd>
                 <pre
-                  class="mono mt-1 max-h-40 overflow-auto rounded-lg border border-border bg-bg/60 p-3 text-[12px] text-muted"
+                  class="mono mt-1 max-h-40 overflow-auto rounded-lg border border-border bg-surface-2 p-3 text-[12px] text-muted"
                 >{{ JSON.stringify(invoice.metadata, null, 2) }}</pre>
               </dd>
             </div>
@@ -409,7 +409,7 @@ onMounted(() => void load())
           <template v-if="invoice.address">
             <QrCode :value="qrValue" :size="164" label="Deposit address QR code" />
             <div class="w-full">
-              <div class="flex items-center gap-2 rounded-xl border border-border bg-bg/60 px-3 py-2.5">
+              <div class="flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2.5">
                 <code class="mono min-w-0 flex-1 break-all text-[12px]">{{ invoice.address }}</code>
                 <CopyButton :value="invoice.address" label="Address" :size="14" notify />
               </div>
@@ -441,10 +441,10 @@ onMounted(() => void load())
               <span
                 class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2"
                 :class="{
-                  'border-success bg-success/25': step.state === 'done',
-                  'border-warning bg-warning/25': step.state === 'current',
-                  'border-danger bg-danger/25': step.state === 'failed',
-                  'border-border bg-surface-2': step.state === 'todo',
+                  'border-success bg-success': step.state === 'done',
+                  'border-warning bg-warning-soft': step.state === 'current',
+                  'border-danger bg-danger': step.state === 'failed',
+                  'border-border-strong bg-surface-2': step.state === 'todo',
                 }"
                 aria-hidden="true"
               >

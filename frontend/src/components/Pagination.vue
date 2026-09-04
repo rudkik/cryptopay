@@ -72,7 +72,7 @@ function go(page: number): void {
           class="min-w-[32px] rounded-lg px-2 py-1.5 text-xs font-medium transition-colors"
           :class="
             page === meta.current_page
-              ? 'bg-primary text-white'
+              ? 'bg-primary text-primary-on'
               : 'text-muted hover:bg-surface-2 hover:text-text'
           "
           :aria-current="page === meta.current_page ? 'page' : undefined"

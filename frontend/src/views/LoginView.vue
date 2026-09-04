@@ -53,9 +53,9 @@ onMounted(() => {
 
 <template>
   <div class="glow-bg relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
-    <div class="grid-lines pointer-events-none absolute inset-0 opacity-40" aria-hidden="true" />
+    <div class="grid-lines pointer-events-none absolute inset-0 opacity-70" aria-hidden="true" />
     <div
-      class="pointer-events-none absolute left-1/2 top-0 h-px w-[560px] max-w-full -translate-x-1/2 bg-gradient-to-r from-transparent via-primary/60 to-transparent"
+      class="pointer-events-none absolute left-1/2 top-0 h-px w-[560px] max-w-full -translate-x-1/2 bg-gradient-to-r from-transparent via-primary/40 to-transparent"
       aria-hidden="true"
     />
 
@@ -75,7 +75,7 @@ onMounted(() => {
         <form class="mt-6 space-y-4" novalidate @submit.prevent="submit">
           <div
             v-if="formError"
-            class="rounded-xl border border-danger/35 bg-danger/10 px-3.5 py-2.5 text-sm text-danger"
+            class="rounded-xl border border-danger/25 bg-danger-soft px-3.5 py-2.5 text-sm text-danger"
             role="alert"
           >
             {{ formError }}

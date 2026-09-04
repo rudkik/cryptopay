@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    color-scheme: dark;
+    color-scheme: light;
   }
 
   html,
@@ -19,12 +19,12 @@
   }
 
   *:focus-visible {
-    @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-bg rounded-[6px];
+    @apply outline-none ring-2 ring-primary/40 ring-offset-2 ring-offset-bg rounded-[6px];
   }
 
   ::selection {
-    background: rgba(139, 92, 246, 0.35);
-    color: #fff;
+    background: rgba(109, 77, 242, 0.18);
+    color: #1c1b1f;
   }
 
   ::-webkit-scrollbar {
@@ -35,13 +35,13 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #2d2050;
+    background: #d6d2c6;
     border-radius: 8px;
     border: 2px solid transparent;
     background-clip: padding-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #3d2c6b;
+    background: #bdb8a9;
     background-clip: padding-box;
   }
 
@@ -60,9 +60,12 @@
     @apply rounded-2xl border border-border bg-surface shadow-card;
   }
 
+  /*
+   * Kept as a separate name because floating surfaces (menus, toasts, dialogs)
+   * need a heavier shadow than an in-flow card; on light there is no glass.
+   */
   .card-glass {
-    @apply rounded-2xl border border-border shadow-card backdrop-blur-xl;
-    background: linear-gradient(160deg, rgba(30, 20, 56, 0.86) 0%, rgba(21, 13, 39, 0.92) 100%);
+    @apply rounded-2xl border border-border bg-surface shadow-pop;
   }
 
   .btn {
@@ -70,31 +73,31 @@
       transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-primary text-white hover:bg-primary-hover shadow-glow-sm;
+    @apply btn bg-primary text-primary-on hover:bg-primary-hover shadow-glow-sm;
   }
   .btn-secondary {
-    @apply btn border-border bg-surface-2 text-text hover:border-primary/60 hover:bg-[#26194a];
+    @apply btn border-border-strong bg-surface text-text shadow-sm hover:border-primary/50 hover:bg-surface-2;
   }
   .btn-ghost {
     @apply btn text-muted hover:bg-surface-2 hover:text-text;
   }
   .btn-danger {
-    @apply btn border-danger/40 bg-danger/10 text-danger hover:bg-danger/20;
+    @apply btn border-danger/25 bg-danger-soft text-danger hover:bg-danger hover:text-white;
   }
   .btn-sm {
     @apply px-2.5 py-1.5 text-xs rounded-lg;
   }
 
   .input {
-    @apply w-full rounded-xl border border-border bg-bg/60 px-3 py-2 text-sm text-text placeholder:text-muted/60
-      transition-colors duration-150 focus:border-primary/70 focus:outline-none focus:ring-2 focus:ring-primary/35 disabled:opacity-60;
+    @apply w-full rounded-xl border border-border-strong bg-surface px-3 py-2 text-sm text-text placeholder:text-muted/70
+      transition-colors duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:bg-surface-2 disabled:opacity-70;
   }
   .input-error {
-    @apply border-danger/70 focus:border-danger focus:ring-danger/30;
+    @apply border-danger focus:border-danger focus:ring-danger/30;
   }
 
   .checkbox {
-    @apply h-4 w-4 shrink-0 cursor-pointer rounded border-border bg-bg accent-primary
+    @apply h-4 w-4 shrink-0 cursor-pointer rounded border-border-strong bg-surface accent-primary
       focus:ring-2 focus:ring-primary/40 focus:ring-offset-0;
   }
 
@@ -114,11 +117,11 @@
   }
 
   .table-row-hover {
-    @apply transition-colors hover:bg-surface-2/70;
+    @apply transition-colors hover:bg-surface-2;
   }
 
   .link {
-    @apply text-primary-hover underline-offset-2 transition-colors hover:text-accent hover:underline;
+    @apply text-primary-hover underline-offset-2 transition-colors hover:text-primary hover:underline;
   }
 
   .chip {
@@ -127,18 +130,23 @@
 }
 
 @layer utilities {
+  /*
+   * Warm off-white ground with a barely-there violet/teal wash. The tints stay
+   * under 10% so body text keeps its full contrast anywhere on the page.
+   */
   .glow-bg {
+    background-color: #f6f5f0;
     background-image:
-      radial-gradient(46rem 32rem at 50% -4%, rgba(139, 92, 246, 0.26), transparent 66%),
-      radial-gradient(38rem 28rem at 6% 20%, rgba(139, 92, 246, 0.18), transparent 62%),
-      radial-gradient(40rem 30rem at 94% 14%, rgba(217, 70, 239, 0.20), transparent 62%),
-      radial-gradient(44rem 34rem at 50% 106%, rgba(139, 92, 246, 0.16), transparent 62%);
+      radial-gradient(46rem 32rem at 50% -6%, rgba(109, 77, 242, 0.09), transparent 68%),
+      radial-gradient(36rem 26rem at 4% 16%, rgba(109, 77, 242, 0.06), transparent 64%),
+      radial-gradient(38rem 28rem at 96% 12%, rgba(14, 165, 164, 0.07), transparent 64%),
+      radial-gradient(44rem 34rem at 50% 108%, rgba(109, 77, 242, 0.05), transparent 64%);
   }
 
   .grid-lines {
     background-image:
-      linear-gradient(rgba(139, 92, 246, 0.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(139, 92, 246, 0.05) 1px, transparent 1px);
+      linear-gradient(rgba(28, 27, 31, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(28, 27, 31, 0.035) 1px, transparent 1px);
     background-size: 56px 56px;
   }
 

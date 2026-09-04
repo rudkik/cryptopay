@@ -33,7 +33,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   <div ref="root" class="relative">
     <button
       type="button"
-      class="flex items-center gap-2 rounded-xl border border-border bg-surface px-2.5 py-2 transition-colors hover:border-primary/40"
+      class="flex items-center gap-2 rounded-xl border border-border-strong bg-surface px-2.5 py-2 transition-colors hover:border-primary/50"
       :aria-expanded="open"
       aria-haspopup="true"
       :aria-label="`Watcher status — ${summary}`"
@@ -48,7 +48,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
           :healthy="network.watcher_healthy"
           :enabled="network.is_enabled"
         />
-        <span v-if="networks.items.length === 0" class="h-2 w-2 rounded-full bg-muted/50" />
+        <span v-if="networks.items.length === 0" class="h-2 w-2 rounded-full bg-border-strong" />
       </span>
     </button>
 
@@ -69,10 +69,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
           <li
             v-for="network in networks.items"
             :key="network.code"
-            class="flex items-center justify-between gap-3 rounded-lg px-1.5 py-2 hover:bg-surface-2/70"
+            class="flex items-center justify-between gap-3 rounded-lg px-1.5 py-2 hover:bg-surface-2"
           >
             <span class="flex min-w-0 items-center gap-2">
-              <NetworkIcon :network="network.code" :size="14" class="text-muted" />
+              <NetworkIcon :network="network.code" :size="16" />
               <span class="truncate text-sm">{{ network.name }}</span>
             </span>
             <span class="flex shrink-0 items-center gap-2 text-right">
@@ -91,7 +91,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         </p>
         <RouterLink
           to="/admin/networks"
-          class="mt-2 block rounded-lg px-1.5 py-2 text-xs text-primary-hover hover:bg-surface-2/70"
+          class="mt-2 block rounded-lg px-1.5 py-2 text-xs text-primary-hover hover:bg-surface-2"
           @click="open = false"
         >
           Manage networks →

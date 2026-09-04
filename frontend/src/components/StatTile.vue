@@ -14,19 +14,15 @@ withDefaults(
 )
 
 const TONES = {
-  primary: 'text-primary-hover bg-primary/12 border-primary/25',
-  success: 'text-success bg-success/12 border-success/25',
-  warning: 'text-warning bg-warning/12 border-warning/25',
-  danger: 'text-danger bg-danger/12 border-danger/25',
+  primary: 'text-primary-hover bg-primary-soft border-primary/20',
+  success: 'text-success bg-success-soft border-success/20',
+  warning: 'text-warning bg-warning-soft border-warning/20',
+  danger: 'text-danger bg-danger-soft border-danger/20',
 } as const
 </script>
 
 <template>
-  <div class="card group relative overflow-hidden p-5 transition-colors hover:border-primary/35">
-    <div
-      class="pointer-events-none absolute -right-10 -top-16 h-32 w-32 rounded-full bg-primary/10 opacity-0 blur-2xl transition-opacity duration-300 group-hover:opacity-100"
-      aria-hidden="true"
-    />
+  <div class="card group relative overflow-hidden p-5 transition-colors hover:border-primary/40">
     <div class="relative flex items-start justify-between gap-3">
       <p class="text-xs font-medium uppercase tracking-wide text-muted">{{ label }}</p>
       <span

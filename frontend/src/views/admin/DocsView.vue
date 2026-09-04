@@ -13,16 +13,16 @@ let observer: IntersectionObserver | null = null
 const allSections = computed(() => API_DOCS.flatMap((group) => group.sections))
 
 const METHOD_TONES: Record<string, string> = {
-  GET: 'border-success/30 bg-success/10 text-success',
-  POST: 'border-primary/40 bg-primary/15 text-primary-hover',
-  PUT: 'border-warning/30 bg-warning/10 text-warning',
-  DELETE: 'border-danger/30 bg-danger/10 text-danger',
+  GET: 'border-success/25 bg-success-soft text-success',
+  POST: 'border-primary/25 bg-primary-soft text-primary-hover',
+  PUT: 'border-warning/25 bg-warning-soft text-warning',
+  DELETE: 'border-danger/25 bg-danger-soft text-danger',
 }
 
 const CALLOUT_TONES = {
-  info: { wrap: 'border-primary/30 bg-primary/[.08] text-primary-hover', icon: Info },
-  warning: { wrap: 'border-warning/30 bg-warning/[.08] text-warning', icon: AlertTriangle },
-  success: { wrap: 'border-success/30 bg-success/[.08] text-success', icon: CheckCircle2 },
+  info: { wrap: 'border-info/25 bg-info-soft text-info', icon: Info },
+  warning: { wrap: 'border-warning/25 bg-warning-soft text-warning', icon: AlertTriangle },
+  success: { wrap: 'border-success/25 bg-success-soft text-success', icon: CheckCircle2 },
 } as const
 
 /** Split `text with \`code\`` into runs so backticks render as inline code. */
@@ -87,7 +87,7 @@ onBeforeUnmount(() => observer?.disconnect())
         aria-label="Table of contents"
       >
         <div class="card p-4 xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none">
-          <p class="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted/70">
+          <p class="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
             On this page
           </p>
           <ul class="space-y-4">
@@ -100,8 +100,8 @@ onBeforeUnmount(() => observer?.disconnect())
                     class="-ml-px block w-full border-l-2 px-3 py-1.5 text-left text-[13px] transition-colors"
                     :class="
                       activeId === section.id
-                        ? 'border-primary text-primary-hover'
-                        : 'border-transparent text-muted hover:border-border hover:text-text'
+                        ? 'border-primary font-medium text-primary-hover'
+                        : 'border-transparent text-muted hover:border-border-strong hover:text-text'
                     "
                     :aria-current="activeId === section.id ? 'true' : undefined"
                     @click="scrollTo(section.id)"
@@ -144,7 +144,7 @@ onBeforeUnmount(() => observer?.disconnect())
 
               <div
                 v-else-if="isBlock(block, 'endpoint')"
-                class="flex flex-wrap items-center gap-2.5 rounded-xl border border-border bg-surface-2/50 px-3.5 py-3"
+                class="flex flex-wrap items-center gap-2.5 rounded-xl border border-border bg-surface-2 px-3.5 py-3"
               >
                 <span
                   class="mono rounded-md border px-2 py-0.5 text-[11px] font-semibold"
@@ -170,9 +170,9 @@ onBeforeUnmount(() => observer?.disconnect())
                 />
                 <div class="min-w-0 text-xs leading-relaxed">
                   <p v-if="block.title" class="font-semibold">{{ block.title }}</p>
-                  <p :class="block.title ? 'mt-0.5 opacity-90' : ''">
+                  <p :class="block.title ? 'mt-0.5' : ''">
                     <template v-for="(run, i) in inlineRuns(block.value)" :key="i">
-                      <code v-if="run.code" class="mono rounded bg-black/25 px-1 py-0.5">{{ run.text }}</code>
+                      <code v-if="run.code" class="mono rounded bg-surface/80 px-1 py-0.5 font-medium">{{ run.text }}</code>
                       <template v-else>{{ run.text }}</template>
                     </template>
                   </p>
@@ -200,7 +200,7 @@ onBeforeUnmount(() => observer?.disconnect())
               <div v-else-if="isBlock(block, 'table')" class="overflow-x-auto">
                 <table class="w-full border-collapse text-sm">
                   <thead>
-                    <tr class="border-b border-border">
+                    <tr class="border-b border-border bg-surface-2">
                       <th
                         v-for="header in block.headers"
                         :key="header"
@@ -212,7 +212,7 @@ onBeforeUnmount(() => observer?.disconnect())
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="(row, i) in block.rows" :key="i" class="border-b border-border/60 last:border-0">
+                    <tr v-for="(row, i) in block.rows" :key="i" class="border-b border-border last:border-0">
                       <td v-for="(cell, j) in row" :key="j" class="px-3 py-2.5 align-top text-muted">
                         <template v-for="(run, k) in inlineRuns(cell)" :key="k">
                           <code

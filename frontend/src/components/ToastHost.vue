@@ -15,7 +15,15 @@ const TONES: Record<ToastVariant, string> = {
   success: 'text-success',
   error: 'text-danger',
   warning: 'text-warning',
-  info: 'text-primary-hover',
+  info: 'text-info',
+}
+
+/** White card, variant carried by a coloured left rail. */
+const RAILS: Record<ToastVariant, string> = {
+  success: 'border-l-success',
+  error: 'border-l-danger',
+  warning: 'border-l-warning',
+  info: 'border-l-info',
 }
 </script>
 
@@ -36,7 +44,8 @@ const TONES: Record<ToastVariant, string> = {
         <div
           v-for="item in toasts"
           :key="item.id"
-          class="card-glass pointer-events-auto flex w-full max-w-sm items-start gap-3 p-3.5 shadow-2xl"
+          class="card-glass pointer-events-auto flex w-full max-w-sm items-start gap-3 border-l-4 p-3.5"
+          :class="RAILS[item.variant]"
           role="alert"
           :aria-live="item.variant === 'error' ? 'assertive' : 'polite'"
         >

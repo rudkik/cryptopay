@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Blocks, RefreshCw, Save, ShieldAlert } from 'lucide-vue-next'
 import EmptyState from '@/components/EmptyState.vue'
 import HealthDot from '@/components/HealthDot.vue'
+import CoinLogo from '@/components/CoinLogo.vue'
 import NetworkIcon from '@/components/NetworkIcon.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import Skeleton from '@/components/Skeleton.vue'
@@ -195,9 +196,9 @@ onMounted(() => {
         <header class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
           <div class="flex min-w-0 items-center gap-3">
             <span
-              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface-2 text-primary-hover"
+              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface"
             >
-              <NetworkIcon :network="network.code" :size="17" />
+              <NetworkIcon :network="network.code" :size="24" />
             </span>
             <div class="min-w-0">
               <h2 class="truncate text-sm font-semibold">{{ network.name }}</h2>
@@ -221,7 +222,7 @@ onMounted(() => {
         <div class="space-y-5 px-5 py-5">
           <div
             v-if="wallets[network.code]?.source === 'none'"
-            class="flex flex-wrap items-start gap-2 rounded-xl border border-danger/40 bg-danger/10 px-3 py-2.5 text-xs text-danger"
+            class="flex flex-wrap items-start gap-2 rounded-xl border border-danger/25 bg-danger-soft px-3 py-2.5 text-xs text-danger"
           >
             <ShieldAlert :size="15" class="mt-px shrink-0" aria-hidden="true" />
             <p class="min-w-0 flex-1">
@@ -232,7 +233,7 @@ onMounted(() => {
             </RouterLink>
           </div>
 
-          <dl class="grid grid-cols-2 gap-3 rounded-xl border border-border bg-surface-2/40 p-3.5 text-xs">
+          <dl class="grid grid-cols-2 gap-3 rounded-xl border border-border bg-surface-2 p-3.5 text-xs">
             <div class="min-w-0">
               <dt class="text-muted">Last scanned block</dt>
               <dd class="mono mt-0.5 truncate text-text">{{ network.last_scanned_block ?? '—' }}</dd>
@@ -262,11 +263,11 @@ onMounted(() => {
                   :aria-label="`Enable ${network.name}`"
                 />
                 <span
-                  class="h-6 w-11 rounded-full bg-surface-2 ring-1 ring-border transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary"
+                  class="h-6 w-11 rounded-full bg-border-strong transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2"
                   aria-hidden="true"
                 />
                 <span
-                  class="pointer-events-none absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-muted transition-transform peer-checked:translate-x-5 peer-checked:bg-white"
+                  class="pointer-events-none absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5"
                   aria-hidden="true"
                 />
               </span>
@@ -328,12 +329,15 @@ onMounted(() => {
               <form
                 v-for="token in tokensOf(network)"
                 :key="token.symbol"
-                class="rounded-xl border border-border bg-surface-2/40 p-3.5"
+                class="rounded-xl border border-border bg-surface-2 p-3.5"
                 novalidate
                 @submit.prevent="saveToken(network, token)"
               >
                 <div class="flex items-center justify-between gap-3">
-                  <span class="text-sm font-semibold">{{ token.symbol }}</span>
+                  <span class="inline-flex items-center gap-2 text-sm font-semibold">
+                    <CoinLogo :currency="token.symbol" :size="20" />
+                    {{ token.symbol }}
+                  </span>
                   <label class="flex cursor-pointer items-center gap-2 text-xs text-muted">
                     <input
                       v-if="tokenDrafts[tokenKey(network.code, token.symbol)]"

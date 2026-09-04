@@ -44,7 +44,7 @@ function cellValue(row: T, key: string): string {
     <table class="w-full border-collapse text-sm">
       <caption v-if="caption" class="sr-only">{{ caption }}</caption>
       <thead>
-        <tr class="border-b border-border">
+        <tr class="border-b border-border bg-surface-2">
           <th
             v-for="column in columns"
             :key="column.key"
@@ -58,7 +58,7 @@ function cellValue(row: T, key: string): string {
       </thead>
 
       <tbody v-if="loading">
-        <tr v-for="i in skeletonRows" :key="`sk-${i}`" class="border-b border-border/60">
+        <tr v-for="i in skeletonRows" :key="`sk-${i}`" class="border-b border-border">
           <td
             v-for="column in columns"
             :key="column.key"
@@ -74,7 +74,7 @@ function cellValue(row: T, key: string): string {
         <tr
           v-for="(row, index) in rows"
           :key="keyFor(row, index)"
-          class="table-row-hover border-b border-border/60 last:border-0"
+          class="table-row-hover border-b border-border last:border-0"
           :class="clickable ? 'cursor-pointer' : ''"
           :tabindex="clickable ? 0 : undefined"
           :role="clickable ? 'link' : undefined"

@@ -128,7 +128,7 @@ onMounted(() => void load())
         <template #cell-name="{ row }">
           <div class="flex min-w-0 items-center gap-3">
             <span
-              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-accent text-[11px] font-semibold text-white"
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary-hover text-[11px] font-semibold text-primary-on"
               aria-hidden="true"
             >
               {{ row.name.slice(0, 2).toUpperCase() }}

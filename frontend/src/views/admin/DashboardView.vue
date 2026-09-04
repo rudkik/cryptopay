@@ -52,7 +52,7 @@ const walletSources = ref<Record<string, WalletSource>>({})
 
 const WALLET_HINTS: Record<WalletSource, { label: string; dot: string; text: string; title: string }> = {
   database: { label: 'db', dot: 'bg-success', text: 'text-muted', title: 'Deposit wallet: key stored in the database' },
-  env: { label: 'env', dot: 'bg-primary-hover', text: 'text-muted', title: 'Deposit wallet: key from the watcher environment' },
+  env: { label: 'env', dot: 'bg-primary', text: 'text-muted', title: 'Deposit wallet: key from the watcher environment' },
   none: { label: 'none', dot: 'bg-danger', text: 'text-danger', title: 'No deposit wallet configured for this network' },
 }
 
@@ -119,8 +119,8 @@ onMounted(() => {
 
       <StatTile label="24h volume" :icon="TrendingUp" :loading="loading" tone="success">
         <div class="space-y-1">
-          <div><AmountDisplay :value="stats?.volume_24h?.USDT" currency="USDT" size="lg" :max-decimals="2" /></div>
-          <div><AmountDisplay :value="stats?.volume_24h?.USDC" currency="USDC" size="sm" :max-decimals="2" muted /></div>
+          <div><AmountDisplay :value="stats?.volume_24h?.USDT" currency="USDT" size="lg" :max-decimals="2" logo /></div>
+          <div><AmountDisplay :value="stats?.volume_24h?.USDC" currency="USDC" size="sm" :max-decimals="2" muted logo /></div>
         </div>
       </StatTile>
 
@@ -149,8 +149,8 @@ onMounted(() => {
           <div v-if="stats" class="text-right">
             <p class="text-[11px] uppercase tracking-wide text-muted">Total</p>
             <!-- The chart plots both series, so the total must cover both currencies. -->
-            <div><AmountDisplay :value="stats.volume_total?.USDT" currency="USDT" size="sm" :max-decimals="2" /></div>
-            <div><AmountDisplay :value="stats.volume_total?.USDC" currency="USDC" size="sm" :max-decimals="2" muted /></div>
+            <div><AmountDisplay :value="stats.volume_total?.USDT" currency="USDT" size="sm" :max-decimals="2" logo /></div>
+            <div><AmountDisplay :value="stats.volume_total?.USDC" currency="USDC" size="sm" :max-decimals="2" muted logo /></div>
           </div>
         </div>
         <Skeleton v-if="loading" height="h-64" rounded="rounded-xl" />
@@ -181,7 +181,7 @@ onMounted(() => {
           <li
             v-for="network in networks"
             :key="network.code"
-            class="rounded-xl border border-border bg-surface-2/50 p-3.5"
+            class="rounded-xl border border-border bg-surface-2 p-3.5"
           >
             <div class="flex items-center justify-between gap-3">
               <span class="flex min-w-0 items-center gap-2">

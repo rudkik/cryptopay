@@ -257,7 +257,30 @@ WATCHER_ENABLED=true            # false = watcher только дериваци�
 
 ## 9. Frontend (Vue 3)
 
-Тема: тёмно‑фиолетовая. Токены: bg `#0a0613`, surface `#150d27`, surface‑2 `#1e1438`, border `#2d2050`, primary `#8b5cf6`, primary‑hover `#a78bfa`, accent `#d946ef`, text `#ece8f6`, muted `#9d94b8`, success `#34d399`, warning `#fbbf24`, danger `#f87171`. Шрифт Inter / system, моно для адресов и хешей.
+Тема: светлая, тёплая (`color-scheme: light`, на `<html>` нет класса `dark`). Токены Tailwind (`frontend/tailwind.config.js`):
+
+| Токен | Значение | Где используется |
+| --- | --- | --- |
+| `bg` | `#f6f5f0` | тёплый фон страницы |
+| `surface` | `#ffffff` | карточки, сайдбар, топбар, модалки, дровер, тосты |
+| `surface-2` | `#f1efe8` | шапки таблиц, блоки кода, вложенные панели, hover строки |
+| `border` / `border-strong` | `#e5e2d9` / `#d6d2c6` | рамки карточек / рамки инпутов и вторичных кнопок |
+| `text` / `muted` | `#1c1b1f` / `#63616c` | основной / вторичный текст |
+| `primary` / `primary-hover` | `#6d4df2` / `#5a3bdc` | заливка кнопок / ссылки и текст по мягкому фону |
+| `primary-soft` / `primary-on` | `#efeaff` / `#ffffff` | активный пункт навигации, чипы / текст на заливке |
+| `accent` / `accent-ink` / `accent-soft` | `#0ea5a4` / `#0f6f6e` / `#e2f7f6` | вторая серия графика / текст акцентом / мягкий фон |
+| `success` / `success-soft` | `#136c33` / `#e6f6ec` | статусы, бейджи |
+| `warning` / `warning-soft` | `#a24a08` / `#fdf3e1` | предупреждения |
+| `danger` / `danger-soft` | `#b91c1c` / `#fdeaea` | ошибки, деструктивные действия |
+| `info` / `info-soft` | `#1d4ed8` / `#e8efff` | информационные callout'ы |
+
+Фокус-кольцо — `primary` с альфой 40%. Тень карточки — `0 1px 2px rgba(20,16,40,.06), 0 8px 24px rgba(20,16,40,.06)`; всплывающие поверхности используют более плотную `shadow-pop`. Оверлей модалок/дровера — `rgba(28,27,31,.35)`. Скелетоны — `#ecebe5`.
+
+`success` и `warning` на шаг темнее исходных `#15803d` / `#b45309`: на своих мягких подложках те давали 4.48 и 4.56 — на грани WCAG AA. Аналогично `muted` темнее `#6f6d78` (4.41 на `surface-2`). Все текстовые пары проверены на AA (4.5:1 для основного текста, 3:1 для крупного).
+
+Шрифт Inter / system, моно для адресов и хешей.
+
+Логотипы сетей и токенов — Vue-компоненты в `frontend/src/components/icons/` (`EthereumLogo`, `BnbLogo`, `TronLogo`, `UsdtLogo`, `UsdcLogo`), собранные из CC0-набора в `src/assets/crypto/*.svg`. Диспетчер `icons/CryptoLogo.vue` принимает `kind` (`ethereum` | `bsc` | `tron` | `USDT` | `USDC`); обёртки — `NetworkIcon.vue` и `CoinLogo.vue`. SVG инлайнится как шаблон компонента: ни `v-html`, ни внешних URL — CSP `img-src` не задействован.
 
 Роуты: `/login`; `/admin` (dashboard), `/admin/merchants`, `/admin/merchants/:id`, `/admin/invoices`, `/admin/invoices/:id`, `/admin/transactions`, `/admin/networks`, `/admin/tokens`, `/admin/tokens/:id`, `/admin/webhooks`, `/admin/users`, `/admin/docs` (документация merchant API с примерами curl/PHP/JS и описанием подписи вебхуков); публичная `/pay/:id` — hosted checkout (сумма, сеть/токен, адрес с копированием, QR, таймер, прогресс подтверждений, статусы, кнопка success_url при оплате; при `selection_required` — шаг выбора валюты и сети из `options` с подтверждениями и оценкой времени, после `POST .../select` адрес появляется без перезагрузки).
 

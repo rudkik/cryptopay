@@ -4,20 +4,36 @@ export default {
   theme: {
     extend: {
       colors: {
-        bg: '#0a0613',
-        surface: '#150d27',
-        'surface-2': '#1e1438',
-        border: '#2d2050',
-        primary: {
-          DEFAULT: '#8b5cf6',
-          hover: '#a78bfa',
+        // Warm light palette — see SPEC §9.
+        bg: '#f6f5f0',
+        surface: '#ffffff',
+        'surface-2': '#f1efe8',
+        border: {
+          DEFAULT: '#e5e2d9',
+          strong: '#d6d2c6',
         },
-        accent: '#d946ef',
-        text: '#ece8f6',
-        muted: '#9d94b8',
-        success: '#34d399',
-        warning: '#fbbf24',
-        danger: '#f87171',
+        primary: {
+          DEFAULT: '#6d4df2',
+          hover: '#5a3bdc',
+          soft: '#efeaff',
+          on: '#ffffff',
+        },
+        accent: {
+          DEFAULT: '#0ea5a4',
+          // Darkened for text use: #0ea5a4 only clears 3:1 on white.
+          ink: '#0f6f6e',
+          soft: '#e2f7f6',
+        },
+        text: '#1c1b1f',
+        // Spec called for #6f6d78; that lands at 4.41:1 on surface-2, so it is
+        // nudged darker to clear WCAG AA on both white and surface-2.
+        muted: '#63616c',
+        // Both nudged a step darker than the brief: #15803d / #b45309 land at
+        // 4.48 / 4.56 on their own soft tints, which is at or below AA.
+        success: { DEFAULT: '#136c33', soft: '#e6f6ec' },
+        warning: { DEFAULT: '#a24a08', soft: '#fdf3e1' },
+        danger: { DEFAULT: '#b91c1c', soft: '#fdeaea' },
+        info: { DEFAULT: '#1d4ed8', soft: '#e8efff' },
       },
       fontFamily: {
         sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
@@ -31,9 +47,10 @@ export default {
         '2xl': '1rem',
       },
       boxShadow: {
-        card: '0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6)',
-        glow: '0 0 0 1px rgba(139,92,246,.35), 0 8px 40px -12px rgba(139,92,246,.45)',
-        'glow-sm': '0 0 18px -4px rgba(139,92,246,.55)',
+        card: '0 1px 2px rgba(20,16,40,.06), 0 8px 24px rgba(20,16,40,.06)',
+        pop: '0 2px 6px rgba(20,16,40,.08), 0 16px 40px rgba(20,16,40,.12)',
+        glow: '0 1px 2px rgba(20,16,40,.06), 0 10px 30px rgba(109,77,242,.12)',
+        'glow-sm': '0 1px 2px rgba(20,16,40,.06), 0 4px 12px rgba(109,77,242,.20)',
       },
       keyframes: {
         'fade-in': {

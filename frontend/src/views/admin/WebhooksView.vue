@@ -224,7 +224,7 @@ onMounted(() => {
         <div v-if="selected.last_error">
           <dt class="text-xs text-muted">Last error</dt>
           <dd
-            class="mono mt-1 max-h-32 overflow-auto rounded-lg border border-danger/30 bg-danger/10 p-3 text-xs text-danger"
+            class="mono mt-1 max-h-32 overflow-auto rounded-lg border border-danger/25 bg-danger-soft p-3 text-xs text-danger"
           >
             {{ selected.last_error }}
           </dd>
@@ -232,7 +232,7 @@ onMounted(() => {
         <div v-if="selected.response_body">
           <dt class="text-xs text-muted">Response body</dt>
           <dd
-            class="mono mt-1 max-h-40 overflow-auto rounded-lg border border-border bg-bg/60 p-3 text-xs text-muted"
+            class="mono mt-1 max-h-40 overflow-auto rounded-lg border border-border bg-surface-2 p-3 text-xs text-muted"
           >
             {{ selected.response_body }}
           </dd>
@@ -241,7 +241,7 @@ onMounted(() => {
           <dt class="text-xs text-muted">Payload</dt>
           <dd>
             <pre
-              class="mono mt-1 max-h-64 overflow-auto rounded-lg border border-border bg-bg/60 p-3 text-xs text-muted"
+              class="mono mt-1 max-h-64 overflow-auto rounded-lg border border-border bg-surface-2 p-3 text-xs text-muted"
             >{{ JSON.stringify(selected.payload, null, 2) }}</pre>
           </dd>
         </div>

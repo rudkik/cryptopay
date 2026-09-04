@@ -39,7 +39,7 @@ async function render(): Promise<void> {
       errorCorrectionLevel: 'M',
       margin: 1,
       width: props.size,
-      color: { dark: '#0a0613', light: '#ffffff' },
+      color: { dark: '#1c1b1f', light: '#ffffff' },
     })
     if (!isPlainQrSvg(markup)) throw new Error('unexpected QR markup')
     svg.value = markup
@@ -54,7 +54,7 @@ watch(() => [props.value, props.size], render, { immediate: true })
 
 <template>
   <div
-    class="relative inline-flex items-center justify-center rounded-2xl bg-white p-3 shadow-glow"
+    class="relative inline-flex items-center justify-center rounded-2xl border border-border bg-white p-3 shadow-card"
     :style="{ width: `${size + 24}px`, height: `${size + 24}px` }"
   >
     <!--
@@ -68,7 +68,7 @@ watch(() => [props.value, props.size], render, { immediate: true })
       :aria-label="label"
       v-html="svg"
     />
-    <p v-else-if="failed" class="px-4 text-center text-xs text-bg">QR code unavailable</p>
-    <div v-else class="h-full w-full animate-pulse rounded-lg bg-neutral-200" aria-hidden="true" />
+    <p v-else-if="failed" class="px-4 text-center text-xs text-muted">QR code unavailable</p>
+    <div v-else class="h-full w-full animate-pulse rounded-lg bg-surface-2" aria-hidden="true" />
   </div>
 </template>

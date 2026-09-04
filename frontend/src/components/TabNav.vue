@@ -40,7 +40,7 @@ function onKeydown(event: KeyboardEvent, tabs: TabItem[], index: number): void {
       class="-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3.5 py-2.5 text-sm font-medium transition-colors"
       :class="
         active === tab.key
-          ? 'border-primary text-text'
+          ? 'border-primary text-primary-hover'
           : 'border-transparent text-muted hover:border-border hover:text-text'
       "
       @click="active = tab.key"
@@ -50,7 +50,7 @@ function onKeydown(event: KeyboardEvent, tabs: TabItem[], index: number): void {
       <span
         v-if="tab.count !== undefined && tab.count !== null"
         class="rounded-full px-1.5 py-0.5 text-[10px] tabular-nums"
-        :class="active === tab.key ? 'bg-primary/20 text-primary-hover' : 'bg-surface-2 text-muted'"
+        :class="active === tab.key ? 'bg-primary-soft text-primary-hover' : 'bg-surface-2 text-muted'"
       >
         {{ tab.count }}
       </span>

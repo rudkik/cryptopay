@@ -45,12 +45,13 @@ const TONES: Record<string, Tone> = {
 
 const tone = computed<Tone>(() => TONES[props.status] ?? 'muted')
 
+/** Soft tint + darker ink of the same hue: every pair clears WCAG AA. */
 const CLASSES: Record<Tone, { wrap: string; dot: string }> = {
-  muted: { wrap: 'border-border bg-surface-2 text-muted', dot: 'bg-muted' },
-  warning: { wrap: 'border-warning/30 bg-warning/10 text-warning', dot: 'bg-warning' },
-  success: { wrap: 'border-success/30 bg-success/10 text-success', dot: 'bg-success' },
-  danger: { wrap: 'border-danger/30 bg-danger/10 text-danger', dot: 'bg-danger' },
-  primary: { wrap: 'border-primary/40 bg-primary/15 text-primary-hover', dot: 'bg-primary-hover' },
+  muted: { wrap: 'border-border-strong bg-surface-2 text-muted', dot: 'bg-muted' },
+  warning: { wrap: 'border-warning/25 bg-warning-soft text-warning', dot: 'bg-warning' },
+  success: { wrap: 'border-success/25 bg-success-soft text-success', dot: 'bg-success' },
+  danger: { wrap: 'border-danger/25 bg-danger-soft text-danger', dot: 'bg-danger' },
+  primary: { wrap: 'border-primary/25 bg-primary-soft text-primary-hover', dot: 'bg-primary' },
 }
 
 const label = computed(() => titleCase(props.status))

@@ -181,19 +181,22 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /*
- * swagger-ui ships a light theme with hard-coded colours and no CSS variables,
- * so every surface has to be repainted in the app palette. Scoped + :deep()
- * keeps all of it inside this view, and the whole block (plus swagger-ui.css
- * itself) lands in the route's async chunk — no other page pays for it.
+ * swagger-ui already ships a light theme, so this block no longer repaints
+ * every surface — it only pulls the defaults onto the app palette: our warm
+ * borders and greys, the violet accent, and the shared radii/typography.
+ * Scoped + :deep() keeps it inside this view, and the whole block (plus
+ * swagger-ui.css) lands in the route's async chunk.
  */
 .swagger-shell {
-  --cp-bg: #0a0613;
-  --cp-surface: #150d27;
-  --cp-surface-2: #1e1438;
-  --cp-border: #2d2050;
-  --cp-primary: #8b5cf6;
-  --cp-text: #ece8f6;
-  --cp-muted: #9d94b8;
+  --cp-surface: #ffffff;
+  --cp-surface-2: #f1efe8;
+  --cp-border: #e5e2d9;
+  --cp-border-strong: #d6d2c6;
+  --cp-primary: #6d4df2;
+  --cp-primary-ink: #5a3bdc;
+  --cp-text: #1c1b1f;
+  --cp-muted: #63616c;
+  --cp-danger: #b91c1c;
 }
 
 .swagger-shell :deep(.swagger-ui) {
@@ -201,7 +204,7 @@ onBeforeUnmount(() => {
   font-family: inherit;
 }
 
-/* --- Typography: swagger-ui hard-codes near-black on almost every text node. */
+/* --- Typography: swagger-ui hard-codes its own near-black / grey scale. */
 .swagger-shell :deep(.swagger-ui .info .title),
 .swagger-shell :deep(.swagger-ui .info h1),
 .swagger-shell :deep(.swagger-ui .info h2),
@@ -210,41 +213,15 @@ onBeforeUnmount(() => {
 .swagger-shell :deep(.swagger-ui .info h5),
 .swagger-shell :deep(.swagger-ui .info li),
 .swagger-shell :deep(.swagger-ui .info p),
-.swagger-shell :deep(.swagger-ui .info table),
-.swagger-shell :deep(.swagger-ui .info td),
-.swagger-shell :deep(.swagger-ui .info th),
 .swagger-shell :deep(.swagger-ui .opblock-tag),
-.swagger-shell :deep(.swagger-ui .opblock-tag small),
 .swagger-shell :deep(.swagger-ui .opblock .opblock-section-header h4),
-.swagger-shell :deep(.swagger-ui .opblock .opblock-section-header > label),
-.swagger-shell :deep(.swagger-ui .opblock .opblock-summary-description),
-.swagger-shell :deep(.swagger-ui .opblock .opblock-summary-operation-id),
 .swagger-shell :deep(.swagger-ui .opblock .opblock-summary-path),
-.swagger-shell :deep(.swagger-ui .opblock .opblock-summary-path__deprecated),
-.swagger-shell :deep(.swagger-ui .opblock-description-wrapper p),
-.swagger-shell :deep(.swagger-ui .opblock-external-docs-wrapper p),
-.swagger-shell :deep(.swagger-ui .opblock-title_normal p),
-.swagger-shell :deep(.swagger-ui .parameter__name),
-.swagger-shell :deep(.swagger-ui .parameter__extension),
-.swagger-shell :deep(.swagger-ui .parameter__in),
-.swagger-shell :deep(.swagger-ui .response-col_links),
-.swagger-shell :deep(.swagger-ui .response-col_status),
 .swagger-shell :deep(.swagger-ui .responses-inner h4),
 .swagger-shell :deep(.swagger-ui .responses-inner h5),
-.swagger-shell :deep(.swagger-ui .scheme-container .schemes-title),
-.swagger-shell :deep(.swagger-ui .tab li),
 .swagger-shell :deep(.swagger-ui table thead tr td),
 .swagger-shell :deep(.swagger-ui table thead tr th),
-.swagger-shell :deep(.swagger-ui .markdown p),
-.swagger-shell :deep(.swagger-ui .markdown li),
-.swagger-shell :deep(.swagger-ui .renderedMarkdown p),
-.swagger-shell :deep(.swagger-ui .renderedMarkdown li),
-.swagger-shell :deep(.swagger-ui .dialog-ux .modal-ux-content h4),
-.swagger-shell :deep(.swagger-ui .dialog-ux .modal-ux-content p),
-.swagger-shell :deep(.swagger-ui .dialog-ux .modal-ux-header h3),
-.swagger-shell :deep(.swagger-ui label),
 .swagger-shell :deep(.swagger-ui .model-title),
-.swagger-shell :deep(.swagger-ui .model) {
+.swagger-shell :deep(.swagger-ui label) {
   color: var(--cp-text);
 }
 
@@ -253,8 +230,8 @@ onBeforeUnmount(() => {
 .swagger-shell :deep(.swagger-ui .prop-format),
 .swagger-shell :deep(.swagger-ui .response-col_description),
 .swagger-shell :deep(.swagger-ui .opblock-tag small),
-.swagger-shell :deep(.swagger-ui .info .base-url),
-.swagger-shell :deep(.swagger-ui .info .title small pre) {
+.swagger-shell :deep(.swagger-ui .opblock .opblock-summary-description),
+.swagger-shell :deep(.swagger-ui .info .base-url) {
   color: var(--cp-muted);
 }
 
@@ -262,17 +239,17 @@ onBeforeUnmount(() => {
 .swagger-shell :deep(.swagger-ui a.nostyle),
 .swagger-shell :deep(.swagger-ui .markdown a),
 .swagger-shell :deep(.swagger-ui .renderedMarkdown a) {
-  color: var(--cp-primary);
+  color: var(--cp-primary-ink);
 }
 
 /* Inline `code` in descriptions defaults to a pale pink pill. */
 .swagger-shell :deep(.swagger-ui .markdown code),
 .swagger-shell :deep(.swagger-ui .renderedMarkdown code) {
   background: var(--cp-surface-2);
-  color: #c4b5fd;
+  color: var(--cp-primary-ink);
 }
 
-/* --- Surfaces. */
+/* --- Surfaces: warm borders, our radius, no drop shadows inside the card. */
 .swagger-shell :deep(.swagger-ui .scheme-container),
 .swagger-shell :deep(.swagger-ui section.models),
 .swagger-shell :deep(.swagger-ui .dialog-ux .modal-ux),
@@ -285,6 +262,7 @@ onBeforeUnmount(() => {
 .swagger-shell :deep(.swagger-ui .opblock) {
   background: var(--cp-surface);
   border-color: var(--cp-border);
+  border-radius: 12px;
   box-shadow: none;
 }
 
@@ -292,38 +270,51 @@ onBeforeUnmount(() => {
   border-color: var(--cp-border);
 }
 
-/* Method tints: keep the hue, drop the milky background. */
+/*
+ * Method tints. swagger-ui's defaults are saturated blues/greens; these keep a
+ * readable hue on the warm ground and put the brand violet on POST.
+ */
 .swagger-shell :deep(.swagger-ui .opblock.opblock-get) {
-  background: rgba(56, 189, 248, 0.06);
-  border-color: rgba(56, 189, 248, 0.4);
+  background: #f2f6ff;
+  border-color: #c9d8f7;
+}
+.swagger-shell :deep(.swagger-ui .opblock.opblock-get .opblock-summary-method) {
+  background: #1d4ed8;
 }
 .swagger-shell :deep(.swagger-ui .opblock.opblock-post) {
-  background: rgba(52, 211, 153, 0.06);
-  border-color: rgba(52, 211, 153, 0.4);
+  background: #f5f2ff;
+  border-color: #d6cbfb;
+}
+.swagger-shell :deep(.swagger-ui .opblock.opblock-post .opblock-summary-method) {
+  background: var(--cp-primary);
 }
 .swagger-shell :deep(.swagger-ui .opblock.opblock-put) {
-  background: rgba(251, 191, 36, 0.06);
-  border-color: rgba(251, 191, 36, 0.4);
+  background: #fdf6ea;
+  border-color: #f0dcb8;
+}
+.swagger-shell :deep(.swagger-ui .opblock.opblock-put .opblock-summary-method) {
+  background: #a24a08;
 }
 .swagger-shell :deep(.swagger-ui .opblock.opblock-delete) {
-  background: rgba(248, 113, 113, 0.06);
-  border-color: rgba(248, 113, 113, 0.4);
+  background: #fdf0f0;
+  border-color: #f2cccc;
+}
+.swagger-shell :deep(.swagger-ui .opblock.opblock-delete .opblock-summary-method) {
+  background: var(--cp-danger);
 }
 
 .swagger-shell :deep(.swagger-ui .opblock-tag) {
   border-color: var(--cp-border);
 }
-.swagger-shell :deep(.swagger-ui .opblock-tag:hover) {
-  background: rgba(139, 92, 246, 0.08);
+.swagger-shell :deep(.swagger-ui .opblock-tag:hover),
+.swagger-shell :deep(.swagger-ui section.models .model-container:hover) {
+  background: var(--cp-surface-2);
 }
 
 .swagger-shell :deep(.swagger-ui section.models .model-container),
 .swagger-shell :deep(.swagger-ui section.models h4) {
   background: transparent;
   border-color: var(--cp-border);
-}
-.swagger-shell :deep(.swagger-ui section.models .model-container:hover) {
-  background: rgba(139, 92, 246, 0.08);
 }
 
 .swagger-shell :deep(.swagger-ui .model-box) {
@@ -332,12 +323,6 @@ onBeforeUnmount(() => {
 
 .swagger-shell :deep(.swagger-ui table tbody tr td) {
   border-color: var(--cp-border);
-  color: var(--cp-text);
-}
-
-.swagger-shell :deep(.swagger-ui .responses-inner),
-.swagger-shell :deep(.swagger-ui .opblock-body) {
-  color: var(--cp-text);
 }
 
 /* --- Form controls. */
@@ -347,9 +332,12 @@ onBeforeUnmount(() => {
 .swagger-shell :deep(.swagger-ui input[type='email']),
 .swagger-shell :deep(.swagger-ui input[type='file']),
 .swagger-shell :deep(.swagger-ui textarea),
-.swagger-shell :deep(.swagger-ui select) {
-  background: var(--cp-bg);
-  border-color: var(--cp-border);
+.swagger-shell :deep(.swagger-ui select),
+.swagger-shell :deep(.swagger-ui .filter .operation-filter-input),
+.swagger-shell :deep(.swagger-ui .servers > label select) {
+  background: var(--cp-surface);
+  border-color: var(--cp-border-strong);
+  border-radius: 10px;
   color: var(--cp-text);
 }
 
@@ -357,19 +345,15 @@ onBeforeUnmount(() => {
 .swagger-shell :deep(.swagger-ui input[type='text']:focus),
 .swagger-shell :deep(.swagger-ui select:focus) {
   border-color: var(--cp-primary);
-  outline: none;
-}
-
-.swagger-shell :deep(.swagger-ui .filter .operation-filter-input) {
-  background: var(--cp-bg);
-  border-color: var(--cp-border);
-  color: var(--cp-text);
+  outline: 2px solid rgba(109, 77, 242, 0.4);
+  outline-offset: 1px;
 }
 
 /* --- Buttons. */
 .swagger-shell :deep(.swagger-ui .btn) {
-  background: transparent;
-  border-color: var(--cp-border);
+  background: var(--cp-surface);
+  border-color: var(--cp-border-strong);
+  border-radius: 10px;
   color: var(--cp-text);
   box-shadow: none;
 }
@@ -377,11 +361,11 @@ onBeforeUnmount(() => {
   border-color: var(--cp-primary);
 }
 .swagger-shell :deep(.swagger-ui .btn.authorize) {
-  color: var(--cp-primary);
+  color: var(--cp-primary-ink);
   border-color: var(--cp-primary);
 }
 .swagger-shell :deep(.swagger-ui .btn.authorize svg) {
-  fill: var(--cp-primary);
+  fill: var(--cp-primary-ink);
 }
 .swagger-shell :deep(.swagger-ui .btn.execute) {
   background: var(--cp-primary);
@@ -389,56 +373,39 @@ onBeforeUnmount(() => {
   color: #fff;
 }
 .swagger-shell :deep(.swagger-ui .btn.cancel) {
-  background: transparent;
-  border-color: #f87171;
-  color: #f87171;
+  background: var(--cp-surface);
+  border-color: var(--cp-danger);
+  color: var(--cp-danger);
 }
 
-/* Arrows, locks and the expand carets are black SVGs by default. */
 .swagger-shell :deep(.swagger-ui svg.arrow),
 .swagger-shell :deep(.swagger-ui .expand-methods svg),
 .swagger-shell :deep(.swagger-ui .expand-operation svg),
-.swagger-shell :deep(.swagger-ui .model-toggle:after) {
-  fill: var(--cp-muted);
-}
 .swagger-shell :deep(.swagger-ui .authorization__btn svg) {
   fill: var(--cp-muted);
-}
-
-/* --- Tables of parameters / responses. */
-.swagger-shell :deep(.swagger-ui .parameters-col_description input[type='text']) {
-  background: var(--cp-bg);
 }
 
 .swagger-shell :deep(.swagger-ui .response-control-media-type--accept-controller select) {
   border-color: var(--cp-primary);
 }
 
-/* --- Code samples: microlight is already dark, only the frame needs work. */
+/* Code samples keep swagger-ui's dark microlight block — it is a terminal
+   sample, and inverting it would cost the syntax highlighting. */
 .swagger-shell :deep(.swagger-ui .highlight-code > .microlight),
 .swagger-shell :deep(.swagger-ui .model-example pre) {
-  background: #120b22;
-}
-
-.swagger-shell :deep(.swagger-ui .copy-to-clipboard) {
-  background: rgba(45, 32, 80, 0.9);
+  border-radius: 10px;
 }
 
 /* --- Auth dialog. */
-.swagger-shell :deep(.swagger-ui .dialog-ux .modal-ux-header) {
-  border-color: var(--cp-border);
-}
+.swagger-shell :deep(.swagger-ui .dialog-ux .modal-ux-header),
 .swagger-shell :deep(.swagger-ui .auth-container) {
   border-color: var(--cp-border);
 }
-.swagger-shell :deep(.swagger-ui .auth-container .wrapper) {
-  color: var(--cp-text);
-}
 .swagger-shell :deep(.swagger-ui .dialog-ux .backdrop-ux) {
-  background: rgba(10, 6, 19, 0.8);
+  background: rgba(28, 27, 31, 0.35);
 }
 
-/* --- Misc chrome swagger-ui paints white. */
+/* --- Misc chrome: swagger-ui pads for a standalone page. */
 .swagger-shell :deep(.swagger-ui .wrapper) {
   padding: 0;
   max-width: none;
@@ -452,11 +419,6 @@ onBeforeUnmount(() => {
 .swagger-shell :deep(.swagger-ui .scheme-container) {
   margin: 0 0 1.25rem;
   padding: 1rem;
-}
-.swagger-shell :deep(.swagger-ui .servers > label select) {
-  background: var(--cp-bg);
-  border-color: var(--cp-border);
-  color: var(--cp-text);
 }
 .swagger-shell :deep(.swagger-ui .servers-title) {
   color: var(--cp-text);

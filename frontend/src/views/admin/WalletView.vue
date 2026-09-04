@@ -46,17 +46,17 @@ const warnings = reactive<Record<string, string>>({})
 const SOURCE_META: Record<WalletSource, { label: string; wrap: string; dot: string }> = {
   database: {
     label: 'Configured from database',
-    wrap: 'border-success/30 bg-success/10 text-success',
+    wrap: 'border-success/25 bg-success-soft text-success',
     dot: 'bg-success',
   },
   env: {
     label: 'Configured from env',
-    wrap: 'border-primary/40 bg-primary/15 text-primary-hover',
-    dot: 'bg-primary-hover',
+    wrap: 'border-primary/25 bg-primary-soft text-primary-hover',
+    dot: 'bg-primary',
   },
   none: {
     label: 'Not configured',
-    wrap: 'border-danger/40 bg-danger/15 text-danger',
+    wrap: 'border-danger/25 bg-danger-soft text-danger',
     dot: 'bg-danger',
   },
 }
@@ -423,7 +423,7 @@ onMounted(async () => {
             Trust Wallet or Electrum — at the path shown on each card below.
           </p>
           <p
-            class="flex items-start gap-2 rounded-xl border border-danger/40 bg-danger/10 px-3 py-2.5 text-xs text-danger"
+            class="flex items-start gap-2 rounded-xl border border-danger/25 bg-danger-soft px-3 py-2.5 text-xs text-danger"
           >
             <ShieldAlert :size="15" class="mt-px shrink-0" aria-hidden="true" />
             <span>
@@ -458,9 +458,9 @@ onMounted(async () => {
         <header class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
           <div class="flex min-w-0 items-center gap-3">
             <span
-              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface-2 text-primary-hover"
+              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface"
             >
-              <NetworkIcon :network="wallet.network" :size="17" />
+              <NetworkIcon :network="wallet.network" :size="24" />
             </span>
             <div class="min-w-0">
               <h2 class="truncate text-sm font-semibold">{{ wallet.network_name }}</h2>
@@ -483,7 +483,7 @@ onMounted(async () => {
         <div class="space-y-4 px-5 py-5">
           <p
             v-if="wallet.source === 'none'"
-            class="flex items-start gap-2 rounded-xl border border-danger/40 bg-danger/10 px-3 py-2.5 text-xs text-danger"
+            class="flex items-start gap-2 rounded-xl border border-danger/25 bg-danger-soft px-3 py-2.5 text-xs text-danger"
           >
             <ShieldAlert :size="15" class="mt-px shrink-0" aria-hidden="true" />
             <span>No key set — this network cannot issue deposit addresses.</span>
@@ -491,13 +491,13 @@ onMounted(async () => {
 
           <div
             v-if="warnings[wallet.network]"
-            class="flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs text-warning"
+            class="flex items-start gap-2 rounded-xl border border-warning/25 bg-warning-soft px-3 py-2.5 text-xs text-warning"
           >
             <ShieldAlert :size="15" class="mt-px shrink-0" aria-hidden="true" />
             <p class="min-w-0 flex-1">{{ warnings[wallet.network] }}</p>
             <button
               type="button"
-              class="-mr-1 -mt-1 shrink-0 rounded-md p-1 transition-colors hover:bg-warning/20"
+              class="-mr-1 -mt-1 shrink-0 rounded-md p-1 transition-colors hover:bg-warning/15"
               aria-label="Dismiss warning"
               @click="dismissWarning(wallet.network)"
             >
@@ -574,6 +574,7 @@ onMounted(async () => {
                   :value="amount"
                   :currency="currency"
                   size="sm"
+                  logo
                 />
                 <span v-if="receivedEntries(wallet.received).length === 0" class="text-muted">—</span>
               </dd>
@@ -675,6 +676,7 @@ onMounted(async () => {
               :value="amount"
               :currency="currency"
               size="sm"
+              logo
             />
             <span v-if="nonZeroReceived(row.received).length === 0" class="text-muted">—</span>
           </span>
@@ -790,7 +792,7 @@ onMounted(async () => {
             Preview addresses
           </button>
 
-          <div v-if="preview.length" class="rounded-xl border border-border bg-surface-2/40 p-3.5">
+          <div v-if="preview.length" class="rounded-xl border border-border bg-surface-2 p-3.5">
             <p class="text-xs text-muted">
               Compare these with the first addresses in your own wallet app before saving.
             </p>

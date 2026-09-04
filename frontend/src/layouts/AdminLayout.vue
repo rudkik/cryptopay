@@ -128,7 +128,7 @@ onBeforeUnmount(() => {
     >
       <div
         v-if="sidebarOpen"
-        class="fixed inset-0 z-30 bg-bg/80 backdrop-blur-sm lg:hidden"
+        class="fixed inset-0 z-30 bg-text/35 backdrop-blur-[2px] lg:hidden"
         @click="sidebarOpen = false"
       />
     </Transition>
@@ -157,7 +157,7 @@ onBeforeUnmount(() => {
 
       <nav class="flex-1 space-y-6 overflow-y-auto px-3 pb-6">
         <div v-for="section in navigation" :key="section.group">
-          <p class="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted/70">
+          <p class="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
             {{ section.group }}
           </p>
           <ul class="space-y-0.5">
@@ -167,7 +167,7 @@ onBeforeUnmount(() => {
                 class="group relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors"
                 :class="
                   isActive(item)
-                    ? 'bg-primary/15 text-text'
+                    ? 'bg-primary-soft text-primary-hover'
                     : 'text-muted hover:bg-surface-2 hover:text-text'
                 "
                 :aria-current="isActive(item) ? 'page' : undefined"
@@ -181,7 +181,7 @@ onBeforeUnmount(() => {
                   :is="item.icon"
                   :size="16"
                   class="shrink-0 transition-colors"
-                  :class="isActive(item) ? 'text-primary-hover' : 'text-muted group-hover:text-text'"
+                  :class="isActive(item) ? 'text-primary' : 'text-muted group-hover:text-text'"
                   aria-hidden="true"
                 />
                 {{ item.label }}
@@ -204,11 +204,11 @@ onBeforeUnmount(() => {
     <!-- Main column -->
     <div class="lg:pl-[264px]">
       <header
-        class="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-bg/85 px-4 backdrop-blur-xl sm:px-6"
+        class="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-surface/90 px-4 backdrop-blur-xl sm:px-6"
       >
         <button
           type="button"
-          class="rounded-xl border border-border bg-surface p-2 text-muted transition-colors hover:text-text lg:hidden"
+          class="rounded-xl border border-border-strong bg-surface p-2 text-muted transition-colors hover:border-primary/50 hover:text-text lg:hidden"
           aria-label="Open navigation"
           aria-controls="admin-sidebar"
           :aria-expanded="sidebarOpen"
@@ -218,7 +218,7 @@ onBeforeUnmount(() => {
         </button>
 
         <div class="min-w-0 flex-1">
-          <p class="truncate text-sm font-medium text-muted">
+          <p class="truncate text-sm font-semibold text-text">
             {{ (route.meta.title as string) ?? 'Admin' }}
           </p>
         </div>
@@ -228,13 +228,13 @@ onBeforeUnmount(() => {
         <div ref="userMenu" class="relative">
           <button
             type="button"
-            class="flex items-center gap-2 rounded-xl border border-border bg-surface py-1.5 pl-1.5 pr-2.5 transition-colors hover:border-primary/40"
+            class="flex items-center gap-2 rounded-xl border border-border-strong bg-surface py-1.5 pl-1.5 pr-2.5 transition-colors hover:border-primary/50"
             :aria-expanded="userMenuOpen"
             aria-haspopup="menu"
             @click="userMenuOpen = !userMenuOpen"
           >
             <span
-              class="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-accent text-[11px] font-semibold text-white"
+              class="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary-hover text-[11px] font-semibold text-primary-on"
               aria-hidden="true"
             >
               {{ auth.initials }}

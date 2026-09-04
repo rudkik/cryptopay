@@ -15,6 +15,7 @@ import {
 } from 'lucide-vue-next'
 import AppLogo from '@/components/AppLogo.vue'
 import AmountDisplay from '@/components/AmountDisplay.vue'
+import CoinLogo from '@/components/CoinLogo.vue'
 import CopyButton from '@/components/CopyButton.vue'
 import NetworkBadge from '@/components/NetworkBadge.vue'
 import NetworkIcon from '@/components/NetworkIcon.vue'
@@ -219,7 +220,7 @@ onMounted(async () => {
 
 <template>
   <div class="glow-bg relative min-h-screen overflow-hidden px-4 py-8 sm:py-12">
-    <div class="grid-lines pointer-events-none absolute inset-0 opacity-30" aria-hidden="true" />
+    <div class="grid-lines pointer-events-none absolute inset-0 opacity-60" aria-hidden="true" />
 
     <div class="relative mx-auto w-full max-w-[440px]">
       <div class="mb-6 flex items-center justify-center gap-2.5">
@@ -238,7 +239,7 @@ onMounted(async () => {
       <!-- Hard failure -->
       <div v-else-if="loadError || !invoice" class="card-glass p-8 text-center">
         <div
-          class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-danger/30 bg-danger/10 text-danger"
+          class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-danger/25 bg-danger-soft text-danger"
         >
           <AlertTriangle :size="20" aria-hidden="true" />
         </div>
@@ -266,13 +267,14 @@ onMounted(async () => {
               }}
             </p>
 
-            <div class="mt-6 w-full rounded-2xl border border-border bg-bg/40 p-4">
+            <div class="mt-6 w-full rounded-2xl border border-border bg-surface-2 p-4">
               <div class="flex items-baseline justify-between gap-3">
                 <span class="text-xs uppercase tracking-wide text-muted">Paid</span>
                 <AmountDisplay
                   :value="invoice.amount_confirmed"
                   :currency="invoice.currency"
                   size="lg"
+                  logo
                 />
               </div>
               <div class="mt-2.5 flex items-center justify-between gap-3 text-xs text-muted">
@@ -332,7 +334,7 @@ onMounted(async () => {
         <!-- CANCELLED -->
         <div v-else-if="invoice.status === 'cancelled'" class="card-glass p-8 text-center">
           <div
-            class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-danger/30 bg-danger/10 text-danger"
+            class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-danger/25 bg-danger-soft text-danger"
           >
             <Ban :size="20" aria-hidden="true" />
           </div>
@@ -354,7 +356,7 @@ onMounted(async () => {
         <!-- EXPIRED -->
         <div v-else-if="invoice.status === 'expired'" class="card-glass p-8 text-center">
           <div
-            class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-danger/30 bg-danger/10 text-danger"
+            class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-danger/25 bg-danger-soft text-danger"
           >
             <TimerOff :size="20" aria-hidden="true" />
           </div>
@@ -363,7 +365,7 @@ onMounted(async () => {
             This invoice expired on {{ formatDateTime(invoice.expires_at) }}. Start a new payment with
             the merchant.
           </p>
-          <p class="mt-4 rounded-xl border border-warning/25 bg-warning/10 px-3.5 py-2.5 text-xs text-warning">
+          <p class="mt-4 rounded-xl border border-warning/25 bg-warning-soft px-3.5 py-2.5 text-xs text-warning">
             Funds sent to this address after expiry are still credited to the merchant, but the order is
             no longer tracked here.
           </p>
@@ -388,10 +390,10 @@ onMounted(async () => {
             </p>
           </div>
 
-          <div class="mt-6 space-y-3 rounded-2xl border border-border bg-bg/40 p-4">
+          <div class="mt-6 space-y-3 rounded-2xl border border-border bg-surface-2 p-4">
             <div class="flex items-baseline justify-between gap-3">
               <span class="text-xs uppercase tracking-wide text-muted">Received</span>
-              <AmountDisplay :value="invoice.amount_confirmed" :currency="invoice.currency" size="lg" />
+              <AmountDisplay :value="invoice.amount_confirmed" :currency="invoice.currency" size="lg" logo />
             </div>
             <ProgressBar :value="confirmedPercent" tone="warning" label="Amount received" />
             <div class="flex items-baseline justify-between gap-3 text-xs text-muted">
@@ -410,7 +412,7 @@ onMounted(async () => {
           class="card-glass p-8 text-center"
         >
           <div
-            class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-danger/30 bg-danger/10 text-danger"
+            class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-danger/25 bg-danger-soft text-danger"
           >
             <TimerOff :size="20" aria-hidden="true" />
           </div>
@@ -435,7 +437,7 @@ onMounted(async () => {
           <div class="border-b border-border px-6 py-5 text-center">
             <p class="text-xs font-medium uppercase tracking-wide text-muted">Amount due</p>
             <div class="mt-2">
-              <AmountDisplay :value="invoice.amount" :currency="invoice.currency" size="xl" />
+              <AmountDisplay :value="invoice.amount" :currency="invoice.currency" size="xl" logo />
             </div>
             <!-- No currency is chosen yet, so the amount carries no symbol. -->
             <p v-if="invoice.selection_required" class="mt-2 text-xs text-muted">
@@ -449,7 +451,7 @@ onMounted(async () => {
               />
               <span
                 v-if="invoice.status === 'confirming'"
-                class="chip border-warning/30 bg-warning/10 text-warning"
+                class="chip border-warning/25 bg-warning-soft text-warning"
               >
                 <Loader2 :size="11" class="animate-spin" aria-hidden="true" />
                 Confirming
@@ -484,8 +486,9 @@ onMounted(async () => {
                       @change="chooseCurrency(currency)"
                     />
                     <span
-                      class="block rounded-lg px-3 py-2 text-center text-sm font-medium text-muted transition-colors peer-hover:text-text peer-checked:bg-primary peer-checked:text-white peer-checked:shadow-glow-sm peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-bg"
+                      class="flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-center text-sm font-medium text-muted transition-colors peer-hover:bg-surface peer-hover:text-text peer-checked:bg-primary peer-checked:text-primary-on peer-checked:shadow-glow-sm peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface"
                     >
+                      <CoinLogo :currency="currency" :size="18" />
                       {{ currency }}
                     </span>
                   </label>
@@ -515,18 +518,14 @@ onMounted(async () => {
                       @change="selectedNetwork = option.network"
                     />
                     <span
-                      class="flex items-center gap-3 rounded-xl border px-3.5 py-3 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-bg"
+                      class="flex items-center gap-3 rounded-xl border px-3.5 py-3 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface"
                       :class="
                         selectedNetwork === option.network
-                          ? 'border-primary bg-primary/10'
-                          : 'border-border bg-bg/40 hover:border-primary/40 hover:bg-surface-2/60'
+                          ? 'border-primary bg-primary-soft'
+                          : 'border-border bg-surface hover:border-primary/50 hover:bg-surface-2'
                       "
                     >
-                      <NetworkIcon
-                        :network="option.network"
-                        :size="18"
-                        :class="selectedNetwork === option.network ? 'text-primary-hover' : 'text-muted'"
-                      />
+                      <NetworkIcon :network="option.network" :size="28" />
                       <span class="min-w-0 flex-1">
                         <span class="flex flex-wrap items-baseline gap-x-1.5">
                           <span class="text-sm font-medium text-text">{{ option.network_name }}</span>
@@ -541,8 +540,8 @@ onMounted(async () => {
                         class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border"
                         :class="
                           selectedNetwork === option.network
-                            ? 'border-primary bg-primary text-white'
-                            : 'border-border'
+                            ? 'border-primary bg-primary text-primary-on'
+                            : 'border-border-strong'
                         "
                         aria-hidden="true"
                       >
@@ -565,7 +564,7 @@ onMounted(async () => {
               <div class="w-full">
                 <p class="label mb-1.5">Send to this address</p>
                 <div
-                  class="flex items-center gap-2 rounded-xl border border-border bg-bg/60 px-3 py-2.5"
+                  class="flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2.5"
                 >
                   <code class="mono min-w-0 flex-1 break-all text-[12.5px] text-text">
                     {{ invoice.address }}
@@ -588,7 +587,7 @@ onMounted(async () => {
             <!-- Shown once a pair is picked, and for every already-selected invoice. -->
             <p
               v-if="payCurrency && payNetworkName"
-              class="flex w-full items-start gap-2.5 rounded-xl border border-warning/25 bg-warning/[.07] px-3.5 py-3 text-xs leading-relaxed text-warning"
+              class="flex w-full items-start gap-2.5 rounded-xl border border-warning/25 bg-warning-soft px-3.5 py-3 text-xs leading-relaxed text-warning"
             >
               <AlertTriangle :size="15" class="mt-px shrink-0" aria-hidden="true" />
               <span>
@@ -612,7 +611,7 @@ onMounted(async () => {
             <!-- Countdown -->
             <div
               v-if="invoice.expires_at"
-              class="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-bg/40 px-3.5 py-2.5"
+              class="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-surface-2 px-3.5 py-2.5"
             >
               <span class="inline-flex items-center gap-2 text-xs text-muted">
                 <Clock :size="14" aria-hidden="true" />
@@ -629,7 +628,7 @@ onMounted(async () => {
             </div>
 
             <!-- Confirmation progress -->
-            <div v-if="hasPartialPayment" class="w-full space-y-3 rounded-xl border border-border bg-bg/40 p-4">
+            <div v-if="hasPartialPayment" class="w-full space-y-3 rounded-xl border border-border bg-surface-2 p-4">
               <div class="flex items-baseline justify-between gap-3">
                 <span class="text-xs uppercase tracking-wide text-muted">Received</span>
                 <AmountDisplay

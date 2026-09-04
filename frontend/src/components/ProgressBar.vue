@@ -15,9 +15,9 @@ const props = withDefaults(
 
 const TONES = {
   primary: 'from-primary to-accent',
-  success: 'from-success to-[#5eead4]',
-  warning: 'from-warning to-[#fcd34d]',
-  danger: 'from-danger to-[#fca5a5]',
+  success: 'from-success to-[#2f9e5c]',
+  warning: 'from-warning to-[#d97a12]',
+  danger: 'from-danger to-[#dc4040]',
 } as const
 
 const width = computed(() => `${Math.max(0, Math.min(100, props.value))}%`)
@@ -25,7 +25,7 @@ const width = computed(() => `${Math.max(0, Math.min(100, props.value))}%`)
 
 <template>
   <div
-    class="w-full overflow-hidden rounded-full bg-surface-2"
+    class="w-full overflow-hidden rounded-full bg-border"
     :class="height === 'sm' ? 'h-1.5' : 'h-2.5'"
     role="progressbar"
     :aria-valuenow="Math.round(value)"

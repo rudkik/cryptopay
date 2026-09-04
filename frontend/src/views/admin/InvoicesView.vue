@@ -103,7 +103,7 @@ onMounted(() => {
           <div class="min-w-0">
             <p class="mono truncate text-text">{{ truncateMiddle(row.id, 8, 6) }}</p>
             <p v-if="row.external_id" class="truncate text-xs text-muted">{{ row.external_id }}</p>
-            <p v-else-if="row.type === 'token_purchase'" class="text-xs text-accent">Token purchase</p>
+            <p v-else-if="row.type === 'token_purchase'" class="text-xs text-accent-ink">Token purchase</p>
           </div>
         </template>
         <template #cell-merchant="{ row }">

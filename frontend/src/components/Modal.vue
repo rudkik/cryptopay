@@ -76,7 +76,7 @@ watch(
     >
       <div
         v-if="open"
-        class="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-bg/80 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+        class="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-text/35 p-0 backdrop-blur-[2px] sm:items-center sm:p-6"
         @click.self="requestClose"
         @keydown="onKeydown"
       >

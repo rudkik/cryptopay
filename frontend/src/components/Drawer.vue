@@ -27,12 +27,12 @@ onBeforeUnmount(() => {
     >
       <div
         v-if="open"
-        class="fixed inset-0 z-50 bg-bg/80 backdrop-blur-sm"
+        class="fixed inset-0 z-50 bg-text/35 backdrop-blur-[2px]"
         @click.self="emit('close')"
         @keydown.esc="emit('close')"
       >
         <aside
-          class="animate-slide-in-right absolute inset-y-0 right-0 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl"
+          class="animate-slide-in-right absolute inset-y-0 right-0 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-pop"
           role="dialog"
           aria-modal="true"
           :aria-label="title"

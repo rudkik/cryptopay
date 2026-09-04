@@ -20,7 +20,7 @@ const emit = defineEmits<{ close: [] }>()
   <Modal :open="open" :title="title" size="md" persistent @close="emit('close')">
     <div class="space-y-4">
       <p
-        class="flex items-start gap-2.5 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-3 text-xs leading-relaxed text-warning"
+        class="flex items-start gap-2.5 rounded-xl border border-warning/25 bg-warning-soft px-3.5 py-3 text-xs leading-relaxed text-warning"
       >
         <AlertTriangle :size="15" class="mt-px shrink-0" aria-hidden="true" />
         <span>{{ description }}</span>
@@ -28,7 +28,7 @@ const emit = defineEmits<{ close: [] }>()
 
       <div>
         <p class="label">{{ secretLabel }}</p>
-        <div class="flex items-start gap-2 rounded-xl border border-border bg-bg/70 px-3 py-3">
+        <div class="flex items-start gap-2 rounded-xl border border-border bg-surface-2 px-3 py-3">
           <code class="mono min-w-0 flex-1 break-all text-[12.5px] text-text">{{ secret }}</code>
           <CopyButton :value="secret" :label="secretLabel" :size="15" notify />
         </div>

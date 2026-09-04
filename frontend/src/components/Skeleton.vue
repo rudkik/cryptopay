@@ -17,11 +17,11 @@ withDefaults(
     <div
       v-for="i in lines"
       :key="i"
-      class="relative overflow-hidden bg-surface-2"
+      class="relative overflow-hidden bg-[#ecebe5]"
       :class="[width, height, rounded, lines > 1 && i === lines ? 'w-2/3' : '']"
     >
       <div
-        class="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/[.06] to-transparent"
+        class="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/70 to-transparent"
       />
     </div>
   </div>

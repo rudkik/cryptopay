@@ -270,7 +270,7 @@ onMounted(async () => {
                 <tr
                   v-for="balance in balances"
                   :key="`${balance.currency}-${balance.network}`"
-                  class="border-b border-border/60 last:border-0"
+                  class="border-b border-border last:border-0"
                 >
                   <td class="py-2.5 font-medium">{{ balance.currency }}</td>
                   <td class="py-2.5">
