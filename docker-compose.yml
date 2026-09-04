@@ -197,7 +197,8 @@ services:
     # Единственный сервис с публикацией порта. Порт 8081 (internal API для
     # watcher'а) намеренно НЕ публикуется.
     ports:
-      - "${APP_PORT:-8095}:80"
+      # APP_BIND=127.0.0.1 в режиме TLS (profile "tls"): наружу тогда смотрит только caddy.
+      - "${APP_BIND:-0.0.0.0}:${APP_PORT:-8095}:80"
     read_only: true
     tmpfs:
       - /var/cache/nginx:size=32m,mode=0755
@@ -208,8 +209,45 @@ services:
       app: { condition: service_started }
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------------
+  # TLS-терминатор (опционально): `docker compose --profile tls up -d`.
+  # Автоматический сертификат Let's Encrypt для DOMAIN, HTTP→HTTPS, HSTS.
+  # Фиксированный IP нужен nginx'у, чтобы доверять X-Forwarded-For только caddy.
+  # ---------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    environment:
+      DOMAIN: ${DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      default:
+        ipv4_address: 10.77.0.10
+    depends_on:
+      nginx: { condition: service_started }
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    restart: unless-stopped
+
 volumes:
+  caddy-data:
+  caddy-config:
   postgres-data:
   redis-data:
   app-storage:
   watcher-data:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.77.0.0/24

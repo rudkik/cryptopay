@@ -35,6 +35,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // php-fpm достижим только из нашего nginx, который уже подставил
+        // реальный IP (real_ip) и X-Forwarded-Proto от TLS-терминатора.
+        $middleware->trustProxies(at: '*');
+
         $middleware->append(HandleCors::class);
 
         // Applies to the whole API surface: nosniff/no-store on every

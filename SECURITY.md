@@ -150,7 +150,7 @@
       `/api/admin/token-purchases*`) отдаёт `404` — меньше открытой поверхности.
 - [ ] Свои значения `APP_KEY`, `INTERNAL_API_TOKEN` (≥ 32 случайных байт), `DB_PASSWORD`, `REDIS_PASSWORD`, `ADMIN_PASSWORD`.
 - [ ] `WEBHOOK_ALLOW_PRIVATE=false` (вебхуки только на публичные https-адреса ваших проектов).
-- [ ] HTTPS перед nginx (reverse proxy/ingress с TLS), `APP_URL` = внешний https-адрес.
+- [ ] HTTPS: `docker compose --profile tls up -d` с `DOMAIN`/`ACME_EMAIL`/`APP_BIND=127.0.0.1` (встроенный caddy + Let's Encrypt) либо свой reverse proxy; `APP_URL` = внешний https-адрес.
 - [ ] Собственные или платные RPC-ноды (`ETH_RPC_URL`, `BSC_RPC_URL`), `TRON_API_KEY`.
 - [ ] Бэкапы PostgreSQL; том `watcher-data` сохраняется между деплоями.
 - [ ] Мониторинг: `watcher_healthy` по сетям в дашборде, алерт при лаге > 50 блоков.
