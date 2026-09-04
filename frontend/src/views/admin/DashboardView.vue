@@ -22,7 +22,8 @@ import StatTile from '@/components/StatTile.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import VolumeChart from '@/components/VolumeChart.vue'
 import { dashboardApi } from '@/api/dashboard'
-import type { DashboardData, Invoice } from '@/api/types'
+import { walletsApi } from '@/api/wallets'
+import type { DashboardData, Invoice, WalletSource } from '@/api/types'
 import { reportError } from '@/composables/useErrorHandler'
 import { formatCount, formatRelative, truncateMiddle } from '@/utils/format'
 
@@ -41,6 +42,29 @@ const NETWORK_NAMES: Record<string, string> = {
   ethereum: 'Ethereum',
   bsc: 'BNB Smart Chain',
   tron: 'Tron',
+}
+
+/**
+ * Deposit-wallet source per network — one cheap call, rendered as a dot next to
+ * the network badge. Failures are swallowed: the hint simply does not appear.
+ */
+const walletSources = ref<Record<string, WalletSource>>({})
+
+const WALLET_HINTS: Record<WalletSource, { label: string; dot: string; text: string; title: string }> = {
+  database: { label: 'db', dot: 'bg-success', text: 'text-muted', title: 'Deposit wallet: key stored in the database' },
+  env: { label: 'env', dot: 'bg-primary-hover', text: 'text-muted', title: 'Deposit wallet: key from the watcher environment' },
+  none: { label: 'none', dot: 'bg-danger', text: 'text-danger', title: 'No deposit wallet configured for this network' },
+}
+
+async function loadWalletSources(): Promise<void> {
+  try {
+    const items = await walletsApi.list()
+    const next: Record<string, WalletSource> = {}
+    for (const item of items) next[item.network] = item.source
+    walletSources.value = next
+  } catch {
+    /* advisory only */
+  }
 }
 
 const columns: Column[] = [
@@ -69,7 +93,10 @@ function openInvoice(invoice: Invoice): void {
   void router.push({ name: 'invoice-detail', params: { id: invoice.id } })
 }
 
-onMounted(() => void load())
+onMounted(() => {
+  void load()
+  void loadWalletSources()
+})
 </script>
 
 <template>
@@ -157,11 +184,26 @@ onMounted(() => void load())
             class="rounded-xl border border-border bg-surface-2/50 p-3.5"
           >
             <div class="flex items-center justify-between gap-3">
-              <NetworkBadge
-                :network="network.code"
-                :name="network.name ?? NETWORK_NAMES[network.code]"
-                size="sm"
-              />
+              <span class="flex min-w-0 items-center gap-2">
+                <NetworkBadge
+                  :network="network.code"
+                  :name="network.name ?? NETWORK_NAMES[network.code]"
+                  size="sm"
+                />
+                <span
+                  v-if="walletSources[network.code]"
+                  class="inline-flex shrink-0 items-center gap-1 text-[10px]"
+                  :class="WALLET_HINTS[walletSources[network.code]].text"
+                  :title="WALLET_HINTS[walletSources[network.code]].title"
+                >
+                  <span
+                    class="h-1.5 w-1.5 rounded-full"
+                    :class="WALLET_HINTS[walletSources[network.code]].dot"
+                    aria-hidden="true"
+                  />
+                  {{ WALLET_HINTS[walletSources[network.code]].label }}
+                </span>
+              </span>
               <span class="inline-flex items-center gap-1.5 text-[11px]">
                 <HealthDot :healthy="network.watcher_healthy" :enabled="network.is_enabled" />
                 <span

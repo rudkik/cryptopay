@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Enums\NetworkCode;
 use App\Models\Network;
 use App\Models\TokenContract;
+use App\Services\WalletService;
 
 /**
  * Request-scoped memo for networks and token contracts. Registered as a
@@ -58,7 +59,10 @@ class NetworkRegistry
     /**
      * Every currency/network pair a payer may pick on an invoice that has none
      * yet (SPEC §6.3 `options`): enabled networks crossed with their enabled
-     * token contracts, ordered the way SPEC §2 lists them.
+     * token contracts, ordered the way SPEC §2 lists them, and restricted to
+     * networks whose deposit wallet is actually configured (SPEC §3) — offering
+     * a chain no address can be derived on only produces a dead end at select
+     * time.
      *
      * @return list<array{network: string, network_name: string, chain_id: ?int, currency: string, confirmations_required: int, standard: string}>
      */
@@ -90,10 +94,16 @@ class NetworkRegistry
 
         $options = [];
 
+        $wallets = app(WalletService::class);
+
         foreach ($networks as $network) {
             $standard = NetworkCode::standardFor($network->code);
 
             if ($standard === null) {
+                continue;
+            }
+
+            if (! $wallets->isConfigured($network->code)) {
                 continue;
             }
 

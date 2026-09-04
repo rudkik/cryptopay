@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { Blocks, RefreshCw, Save } from 'lucide-vue-next'
+import { Blocks, RefreshCw, Save, ShieldAlert } from 'lucide-vue-next'
 import EmptyState from '@/components/EmptyState.vue'
 import HealthDot from '@/components/HealthDot.vue'
 import NetworkIcon from '@/components/NetworkIcon.vue'
@@ -8,7 +8,8 @@ import PageHeader from '@/components/PageHeader.vue'
 import Skeleton from '@/components/Skeleton.vue'
 import Spinner from '@/components/Spinner.vue'
 import { networksApi } from '@/api/networks'
-import type { Currency, Network, NetworkCode, TokenContract } from '@/api/types'
+import { walletsApi } from '@/api/wallets'
+import type { Currency, Network, NetworkCode, TokenContract, WalletItem } from '@/api/types'
 import { useNetworksStore } from '@/stores/networks'
 import { fieldErrors, reportError } from '@/composables/useErrorHandler'
 import { formatRelative } from '@/utils/format'
@@ -34,6 +35,23 @@ const savingToken = ref<string | null>(null)
 const errors = ref<Record<string, Record<string, string>>>({})
 
 const networks = computed(() => store.items)
+
+/**
+ * Deposit-wallet status per network code. Purely advisory: when the call fails
+ * the map stays empty and no banner is rendered.
+ */
+const wallets = ref<Record<string, WalletItem>>({})
+
+async function loadWallets(): Promise<void> {
+  try {
+    const items = await walletsApi.list()
+    const next: Record<string, WalletItem> = {}
+    for (const item of items) next[item.network] = item
+    wallets.value = next
+  } catch {
+    /* advisory only — the page works without it */
+  }
+}
 
 function tokenKey(code: string, symbol: string): string {
   return `${code}:${symbol}`
@@ -141,7 +159,10 @@ function tokensOf(network: Network): TokenContract[] {
   return network.token_contracts ?? network.tokens ?? []
 }
 
-onMounted(() => void load())
+onMounted(() => {
+  void load()
+  void loadWallets()
+})
 </script>
 
 <template>
@@ -198,6 +219,19 @@ onMounted(() => void load())
         </header>
 
         <div class="space-y-5 px-5 py-5">
+          <div
+            v-if="wallets[network.code]?.source === 'none'"
+            class="flex flex-wrap items-start gap-2 rounded-xl border border-danger/40 bg-danger/10 px-3 py-2.5 text-xs text-danger"
+          >
+            <ShieldAlert :size="15" class="mt-px shrink-0" aria-hidden="true" />
+            <p class="min-w-0 flex-1">
+              No deposit wallet configured — this network cannot accept payments.
+            </p>
+            <RouterLink to="/admin/wallet" class="shrink-0 font-medium underline underline-offset-2">
+              Configure wallet →
+            </RouterLink>
+          </div>
+
           <dl class="grid grid-cols-2 gap-3 rounded-xl border border-border bg-surface-2/40 p-3.5 text-xs">
             <div class="min-w-0">
               <dt class="text-muted">Last scanned block</dt>

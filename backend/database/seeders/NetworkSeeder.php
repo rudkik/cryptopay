@@ -53,7 +53,10 @@ class NetworkSeeder extends Seeder
 
             Wallet::query()->firstOrCreate(
                 ['network_code' => $attributes['code']],
-                ['next_index' => 0],
+                [
+                    'next_index' => 0,
+                    'derivation_path' => Wallet::defaultPathFor($attributes['code']),
+                ],
             );
         }
 

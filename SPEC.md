@@ -48,6 +48,16 @@ cryptopay/
 - Деривацию выполняет **watcher** (`POST /addresses/derive`), Laravel хранит `next_index` в таблице `wallets`.
 - `watcher` имеет CLI `npm run keygen` → печатает mnemonic + `EVM_XPUB` + `TRON_XPUB`.
 
+**Где хранится xpub (приоритет).** Основной способ — админка, страница **Wallet** (`/admin/wallet`, API `/api/admin/wallets`, SPEC §6.4): xpub лежит в `wallets.xpub` и **перекрывает** env. Env‑переменные watcher'а `EVM_XPUB` / `TRON_XPUB` остаются fallback'ом. Отсюда три значения вычисляемого поля `source`:
+
+| `source` | когда | что происходит при выдаче адреса |
+|---|---|---|
+| `database` | `wallets.xpub` заполнен | Laravel шлёт `xpub` в теле `POST /addresses/derive` |
+| `env` | `wallets.xpub` пуст, watcher в `/health` отдаёт `derivation.evm` / `derivation.tron` = true для семьи сети | `xpub` в теле не шлётся, watcher берёт свой env‑ключ |
+| `none` | ни того ни другого | сеть **скрыта** из `options` публичного счёта и из `GET /api/v1/networks`; явный `network` при создании счёта → `422 validation_error` на поле `network`; прямой вызов аллокации → `503 wallet_not_configured` |
+
+Проверка «сеть настроена» кешируется на 30 с (probe `/health` — тоже). Смена xpub при уже выданных адресах разрешена: старые адреса остаются за старым ключом и продолжают мониториться, `next_index` **не сбрасывается** (иначе один и тот же индекс был бы выдан дважды). Полный xpub не возвращается ни одному клиенту (только маска `первые 10 + '…' + последние 6`) и не пишется ни в логи, ни в `audit_logs`.
+
 ## 4. Схема БД (PostgreSQL 16)
 
 Все id — `uuid` (кроме `users`). Timestamps везде. Денежные поля `decimal(36,18)`.
@@ -57,7 +67,7 @@ cryptopay/
 - `api_keys` — `merchant_id, name, key_prefix (первые 12 символов), key_hash (sha256), last_used_at, revoked_at`. Ключ формата `cp_live_<40 hex>`; показывается один раз при создании.
 - `networks` — `code (unique), name, chain_id (nullable), confirmations_required int, is_enabled bool, explorer_tx_url, explorer_address_url, last_scanned_block bigint nullable, watcher_healthy bool, watcher_seen_at`.
 - `token_contracts` — `network_code (fk networks.code), symbol ('USDT'|'USDC'), contract_address, decimals, is_enabled`; unique `(network_code, symbol)`.
-- `wallets` — `network_code unique, next_index int default 0`.
+- `wallets` — `network_code unique, next_index int default 0, xpub text nullable, derivation_path (default `m/44'/60'/0'/0`, для tron `m/44'/195'/0'/0`), label nullable, xpub_set_at nullable, xpub_set_by nullable fk users`. `xpub` — только публичный ключ, наружу отдаётся исключительно маской (SPEC §3).
 - `deposit_addresses` — `network_code, address, derivation_index, merchant_id nullable, invoice_id nullable, is_active`; unique `(network_code, address)`. Адрес привязывается к счёту навсегда (переиспользование не делаем).
 - `invoices` — `merchant_id, type ('payment'|'token_purchase'), external_id nullable, currency ('USDT'|'USDC'), network_code, deposit_address_id, amount (к оплате), amount_received (сумма detected+confirmed), amount_confirmed, status, description, customer_email, customer_id (строка мерчанта), metadata json, success_url, cancel_url, expires_at, paid_at, timestamps`. Индексы: `(merchant_id, external_id)`, `status`, `expires_at`.
 - `transactions` — `invoice_id nullable, deposit_address_id, merchant_id nullable, network_code, tx_hash, log_index int default 0, from_address, to_address, currency, contract_address, amount, amount_raw string, block_number bigint, block_hash, confirmations int, status ('detected'|'confirmed'|'failed'|'orphaned'), credited_at nullable, raw json`; unique `(network_code, tx_hash, log_index)`.
@@ -156,6 +166,23 @@ Auth: Laravel Sanctum, `POST /api/admin/auth/login {email,password}` → `{ toke
 - Invoices: `GET /invoices` (фильтры как в v1 + `merchant_id`, `q` по id/external_id/address), `GET /invoices/{id}` (с transactions, webhooks), `POST /invoices/{id}/cancel`, `POST /invoices/{id}/simulate-payment {amount?, confirmed?: bool}` — только если `SIMULATION_ENABLED=true`: создаёт фейковую транзакцию через тот же pipeline, что и watcher (для демо/QA).
 - Transactions: `GET /transactions` (фильтры), `GET /transactions/{id}`.
 - Networks: `GET /networks` (+token_contracts), `PUT /networks/{code} {confirmations_required, is_enabled, explorer_*}`, `PUT /networks/{code}/tokens/{symbol} {contract_address, decimals, is_enabled}`.
+- Wallets (SPEC §3) — «куда идут деньги»; чтение доступно роли `viewer`, мутации только `admin`:
+  - `GET /wallets` → `{ data: [ { network, network_name, standard, source ('database'|'env'|'none'), configured,
+    xpub_masked (первые 10 + '…' + последние 6, либо null), derivation_path, label, xpub_set_at,
+    xpub_set_by {id,name}|null, next_index, addresses_issued,
+    last_address {address, derivation_index, explorer_url, created_at}|null,
+    received { USDT, USDC } (сумма зачисленных deposit‑записей `ledger_entries` по сети, по всем мерчантам),
+    explorer_address_url } ] }` — порядок ethereum, bsc, tron.
+  - `POST /wallets/{network}/preview {xpub}` → `{ addresses: [ {index, path, address} ] }` (первые 5). Ничего не сохраняет;
+    валидацию ключа выполняет watcher (`POST /addresses/derive-batch`), его `422 invalid_xpub` превращается в
+    `422 validation_error` с `details.xpub`.
+  - `PUT /wallets/{network} {xpub, label?, apply_to_evm?}` → `{ data: {...тот же объект...} }`. `apply_to_evm` для
+    ethereum/bsc сохраняет ключ в обе EVM‑сети. Если адреса уже выдавались, в ответе появляется поле `warning`
+    (UI обязан показать подтверждение). Пишет `audit_logs` (`wallet.xpub_updated`) **только с маской**.
+  - `DELETE /wallets/{network}/xpub` → очищает `wallets.xpub` (возврат к env), audit `wallet.xpub_removed`.
+  - `GET /wallets/{network}/addresses?page=&per_page=` → пагинированный список `deposit_addresses` сети:
+    `{ id, address, derivation_index, network, invoice_id, merchant {id,name}|null, received {USDT,USDC}
+    (подтверждённые транзакции на этот адрес), explorer_url, is_active, created_at }`.
 - Tokens: CRUD `/tokens`, `GET /token-purchases`, `GET /tokens/{id}/holdings`.
 - Webhooks: `GET /webhooks` (фильтры merchant_id, status), `POST /webhooks/{id}/retry`.
 - Ledger/balances: `GET /balances?merchant_id=`, `GET /ledger?merchant_id=`.
@@ -183,8 +210,11 @@ Auth: заголовок `X-Internal-Token: {INTERNAL_API_TOKEN}` (общий с
 ### 6.6 Watcher HTTP (порт 3100, внутри compose `http://watcher:3100`)
 Auth: тот же `X-Internal-Token`.
 - `GET /health` → `{ "ok": true, "networks": [ { "code", "enabled", "headBlock", "lastScannedBlock", "lag", "pendingTxs", "lastError", "updatedAt" } ] }` (без auth).
-- `POST /addresses/derive` `{ "network": "tron", "index": 5 }` → `{ "network", "index", "path": "m/44'/195'/0'/0/5", "address": "T..." }`.
-- `POST /addresses/derive-batch` `{ "network", "from": 0, "count": 10 }` → `{ "addresses": [ {index, path, address} ] }`.
+- `POST /addresses/derive` `{ "network": "tron", "index": 5, "xpub"? }` → `{ "network", "index", "path": "m/44'/195'/0'/0/5", "address": "T..." }`.
+- `POST /addresses/derive-batch` `{ "network", "from": 0, "count": 10, "xpub"? }` → `{ "addresses": [ {index, path, address} ] }`.
+  При наличии `xpub` в теле деривация идёт от него (приоритет над env-`EVM_XPUB`/`TRON_XPUB`,
+  работает и когда соответствующий env-xpub не задан); невалидный `xpub` → `422 invalid_xpub`.
+  xpub нигде не логируется и не попадает в ответ при ошибке.
 - `POST /rescan` `{ "network", "from_block" }` — принудительный пересмотр диапазона.
 
 ## 7. Алгоритм watcher

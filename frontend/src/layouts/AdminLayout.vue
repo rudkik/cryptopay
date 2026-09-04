@@ -14,6 +14,7 @@ import {
   Network,
   Store,
   Users,
+  Wallet,
   Webhook,
   X,
 } from 'lucide-vue-next'
@@ -62,6 +63,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: 'System',
     items: [
+      { label: 'Wallet', to: '/admin/wallet', icon: Wallet },
       { label: 'Networks', to: '/admin/networks', icon: Network },
       { label: 'Admin users', to: '/admin/users', icon: Users, adminOnly: true },
       { label: 'API docs', to: '/admin/docs', icon: BookOpen },

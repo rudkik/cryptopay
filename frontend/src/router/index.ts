@@ -59,6 +59,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'Transactions' },
       },
       {
+        path: 'wallet',
+        name: 'wallet',
+        component: () => import('@/views/admin/WalletView.vue'),
+        meta: { title: 'Wallet' },
+      },
+      {
         path: 'networks',
         name: 'networks',
         component: () => import('@/views/admin/NetworksView.vue'),

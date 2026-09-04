@@ -137,10 +137,19 @@ curl -X POST http://watcher:3100/addresses/derive \
 { "network": "tron", "index": 5, "path": "m/44'/195'/0'/0/5", "address": "T..." }
 ```
 
+Необязательное поле `xpub` (строка) в теле запроса переопределяет env-конфигурацию:
+если оно задано — деривация идёт от него, а не от `EVM_XPUB`/`TRON_XPUB`, и работает
+даже если соответствующий env-xpub вовсе не настроен. Backend-админка (страница Wallet)
+именно так и подставляет xpub из БД для превью адресов; env остаётся резервным путём,
+когда тело запроса `xpub` не передаёт. Невалидный `xpub` (не строка, пустой, не с
+префиксом `xpub`, битый base58check-чексум или не account-level, т.е. `depth != 3`) —
+`422 invalid_xpub`. Сам xpub никогда не попадает ни в ответ, ни в логи.
+
 ### `POST /addresses/derive-batch`
 
-`{"network":"ethereum","from":0,"count":10}` → `{ "addresses": [ { index, path, address } ] }`
-(`count` — от 1 до 1000).
+`{"network":"ethereum","from":0,"count":10,"xpub":"xpub..."?}` → `{ "addresses": [ { index, path, address } ] }`
+(`count` — от 1 до 100). `xpub` необязателен и работает так же, как и у `/addresses/derive`
+(приоритет над env, `422 invalid_xpub` при невалидном значении).
 
 ### `POST /rescan`
 
@@ -155,7 +164,8 @@ curl -X POST http://watcher:3100/addresses/derive \
 | `validation_error` | 422  | некорректное тело запроса                                  |
 | `invalid_state`    | 409  | `/rescan` при `WATCHER_ENABLED=false` или неактивной сети  |
 | `not_found`        | 404  | неизвестный маршрут                                        |
-| `xpub_missing`     | 503  | `EVM_XPUB` / `TRON_XPUB` не заданы                         |
+| `xpub_missing`     | 503  | `EVM_XPUB` / `TRON_XPUB` не заданы, и тело `xpub` не передано |
+| `invalid_xpub`     | 422  | `xpub` в теле `/addresses/derive(-batch)` невалиден         |
 | `server_error`     | 500  | внутренняя ошибка                                          |
 
 Без xpub сервис **всё равно стартует**: `/health` отдаёт `derivationReady: false`,

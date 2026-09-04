@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import Fastify, { LogController, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { AppConfig } from '../config.js';
 import type { Logger } from '../logger.js';
-import { Deriver, XpubMissingError } from '../derivation.js';
+import { Deriver, InvalidXpubError, XpubMissingError, deriveBatchWithXpub, deriveWithXpub } from '../derivation.js';
 import type { ScannerManager } from '../scanner/manager.js';
 import { RescanError } from '../scanner/manager.js';
 import type { StateStore } from '../state/store.js';
@@ -31,6 +31,7 @@ type ErrorCode =
   | 'not_found'
   | 'invalid_state'
   | 'xpub_missing'
+  | 'invalid_xpub'
   | 'server_error';
 
 function fail(
@@ -116,7 +117,7 @@ export function buildServer(deps: ServerDeps) {
 
   // --- POST /addresses/derive ---
   app.post('/addresses/derive', { preHandler: requireAuth }, async (req, reply) => {
-    const body = (req.body ?? {}) as { network?: unknown; index?: unknown };
+    const body = (req.body ?? {}) as { network?: unknown; index?: unknown; xpub?: unknown };
 
     const network = parseNetwork(body.network);
     if (!network) {
@@ -130,9 +131,13 @@ export function buildServer(deps: ServerDeps) {
         index: ['index must be a non-negative integer'],
       });
     }
+    const xpub = parseBodyXpub(body.xpub);
+    if (xpub === INVALID_XPUB_TYPE) {
+      return xpubTypeError(reply);
+    }
 
     try {
-      return deriver.derive(network, index);
+      return xpub !== undefined ? deriveWithXpub(network, index, xpub) : deriver.derive(network, index);
     } catch (err) {
       return derivationError(reply, err);
     }
@@ -140,7 +145,7 @@ export function buildServer(deps: ServerDeps) {
 
   // --- POST /addresses/derive-batch ---
   app.post('/addresses/derive-batch', { preHandler: requireAuth }, async (req, reply) => {
-    const body = (req.body ?? {}) as { network?: unknown; from?: unknown; count?: unknown };
+    const body = (req.body ?? {}) as { network?: unknown; from?: unknown; count?: unknown; xpub?: unknown };
 
     const network = parseNetwork(body.network);
     if (!network) {
@@ -160,9 +165,16 @@ export function buildServer(deps: ServerDeps) {
         count: [`count must be an integer between 1 and ${MAX_DERIVE_BATCH}`],
       });
     }
+    const xpub = parseBodyXpub(body.xpub);
+    if (xpub === INVALID_XPUB_TYPE) {
+      return xpubTypeError(reply);
+    }
 
     try {
-      return { addresses: deriver.deriveBatch(network, from, count) };
+      return {
+        addresses:
+          xpub !== undefined ? deriveBatchWithXpub(network, from, count, xpub) : deriver.deriveBatch(network, from, count),
+      };
     } catch (err) {
       return derivationError(reply, err);
     }
@@ -214,6 +226,10 @@ export function buildServer(deps: ServerDeps) {
         'Derivation is not configured: set EVM_XPUB / TRON_XPUB (see `npm run keygen`).',
       );
     }
+    if (err instanceof InvalidXpubError) {
+      // err.reason по построению никогда не содержит сам xpub (см. derivation.ts).
+      return fail(reply, 422, 'invalid_xpub', 'Invalid xpub.', { xpub: [err.reason] });
+    }
     log.error({ err: (err as Error).message }, 'derivation failed');
     return fail(reply, 500, 'server_error', 'Derivation failed.');
   }
@@ -231,4 +247,22 @@ function parseIndex(value: unknown): number | null {
   const n = typeof value === 'string' ? Number(value) : value;
   if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > 0x7fffffff) return null;
   return n;
+}
+
+/** Отличимый от `undefined` маркер: тело прислало `xpub`, но не строкой. */
+const INVALID_XPUB_TYPE = Symbol('invalid-xpub-type');
+
+/**
+ * Необязательное `xpub` в теле запроса. `undefined` => используем env-конфигурацию
+ * как и раньше; строка (даже пустая — её дальше отбракует derivation.ts) => приоритет
+ * над env. Любой другой тип — ошибка на уровне HTTP, а не деривации.
+ */
+function parseBodyXpub(value: unknown): string | undefined | typeof INVALID_XPUB_TYPE {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') return INVALID_XPUB_TYPE;
+  return value;
+}
+
+function xpubTypeError(reply: FastifyReply): FastifyReply {
+  return fail(reply, 422, 'invalid_xpub', 'Invalid xpub.', { xpub: ['xpub must be a string'] });
 }

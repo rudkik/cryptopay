@@ -9,6 +9,14 @@
 
 const URL_RE = /\b(https?|wss?):\/\/[^\s"'<>,)\]]+/gi;
 
+/**
+ * Сериализованный extended public key (xpub/ypub/zpub — и приватные варианты на
+ * всякий случай), если он всё же просочится в текст ошибки. Ad-hoc xpub из тела
+ * /addresses/derive(-batch) НЕ регистрируется через registerSecret (см. ниже,
+ * почему) — этот паттерн ловит его по форме на любом маршруте вывода в лог.
+ */
+const XPUB_RE = /\b[xyz]p(?:ub|rv)[a-zA-Z0-9]{50,}\b/g;
+
 /** Дополнительные секреты (ключи API, токены), которые надо вырезать по значению. */
 const secrets = new Set<string>();
 
@@ -51,9 +59,10 @@ export function maskUrl(raw: string): string {
   return `${url.protocol}//${host}${hasSecretPath ? '/***' : ''}${trailing}`;
 }
 
-/** Маскирует URL-ы и зарегистрированные секреты в произвольном тексте. */
+/** Маскирует URL-ы, extended public/private keys и зарегистрированные секреты в тексте. */
 export function redactSecrets(text: string): string {
   let out = text.replace(URL_RE, (m) => maskUrl(m));
+  out = out.replace(XPUB_RE, '[redacted-xpub]');
   for (const secret of secrets) {
     if (secret && out.includes(secret)) {
       out = out.split(secret).join('[redacted]');

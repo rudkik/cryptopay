@@ -1,5 +1,16 @@
+import { HDNodeWallet } from 'ethers';
 import { describe, expect, it } from 'vitest';
-import { Deriver, XpubMissingError, generateKeys, tronAddressFromPublicKey, xpubsFromMnemonic } from '../src/derivation.js';
+import {
+  ACCOUNT_PATHS,
+  Deriver,
+  InvalidXpubError,
+  XpubMissingError,
+  deriveBatchWithXpub,
+  deriveWithXpub,
+  generateKeys,
+  tronAddressFromPublicKey,
+  xpubsFromMnemonic,
+} from '../src/derivation.js';
 import { base58CheckDecode, isValidTronAddress, tronBase58ToHex, tronHexToBase58 } from '../src/tronAddress.js';
 
 const TEST_MNEMONIC = 'test test test test test test test test test test test junk';
@@ -109,5 +120,87 @@ describe('HD derivation', () => {
     );
     expect(isValidTronAddress(address)).toBe(true);
     expect(tronBase58ToHex(address)).toMatch(/^41[0-9a-f]{40}$/);
+  });
+});
+
+const OTHER_MNEMONIC = 'legal winner thank year wave sausage worth useful legal winner thank yellow';
+
+describe('deriveWithXpub / deriveBatchWithXpub (ad-hoc xpub, bypasses env)', () => {
+  const { evmXpub, tronXpub } = xpubsFromMnemonic(OTHER_MNEMONIC);
+
+  it('derives the same address as an equivalent Deriver built from that xpub', () => {
+    const viaAdHoc = deriveWithXpub('ethereum', 0, evmXpub);
+    const viaDeriver = new Deriver({ evm: evmXpub }).derive('ethereum', 0);
+    expect(viaAdHoc).toEqual(viaDeriver);
+  });
+
+  it('derives tron addresses the same way as the env path', () => {
+    const viaAdHoc = deriveWithXpub('tron', 2, tronXpub);
+    const viaDeriver = new Deriver({ tron: tronXpub }).derive('tron', 2);
+    expect(viaAdHoc).toEqual(viaDeriver);
+    expect(isValidTronAddress(viaAdHoc.address)).toBe(true);
+  });
+
+  it('deriveBatchWithXpub produces contiguous indexes and paths', () => {
+    const batch = deriveBatchWithXpub('ethereum', 5, 3, evmXpub);
+    expect(batch.map((b) => b.index)).toEqual([5, 6, 7]);
+    expect(batch.map((b) => b.path)).toEqual(["m/44'/60'/0'/0/5", "m/44'/60'/0'/0/6", "m/44'/60'/0'/0/7"]);
+    expect(batch).toEqual(new Deriver({ evm: evmXpub }).deriveBatch('ethereum', 5, 3));
+  });
+
+  it('tolerates surrounding whitespace the same way the env path does', () => {
+    expect(deriveWithXpub('ethereum', 0, `  ${evmXpub}  `)).toEqual(deriveWithXpub('ethereum', 0, evmXpub));
+  });
+
+  it('rejects a non-string-shaped empty xpub', () => {
+    expect(() => deriveWithXpub('ethereum', 0, '   ')).toThrow(InvalidXpubError);
+  });
+
+  it('rejects xprv/ypub/zpub/tpub prefixes', () => {
+    const xprv = HDNodeWallet.fromPhrase(OTHER_MNEMONIC, undefined, ACCOUNT_PATHS.evm).extendedKey;
+    expect(xprv.startsWith('xprv')).toBe(true);
+    expect(() => deriveWithXpub('ethereum', 0, xprv)).toThrow(InvalidXpubError);
+    expect(() => deriveWithXpub('ethereum', 0, 'tpubDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD')).toThrow(
+      InvalidXpubError,
+    );
+  });
+
+  it('rejects a broken base58check checksum with a reason that does not contain the xpub', () => {
+    const broken = `${evmXpub.slice(0, -1)}${evmXpub.at(-1) === 'a' ? 'b' : 'a'}`;
+    try {
+      deriveWithXpub('ethereum', 0, broken);
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(InvalidXpubError);
+      expect((err as InvalidXpubError).reason).not.toContain(broken);
+      expect((err as InvalidXpubError).message).not.toContain(broken);
+    }
+  });
+
+  it('rejects a non-account-level (depth != 3) xpub', () => {
+    const deeper = HDNodeWallet.fromPhrase(OTHER_MNEMONIC, undefined, ACCOUNT_PATHS.evm).deriveChild(0).neuter()
+      .extendedKey;
+    try {
+      deriveWithXpub('ethereum', 0, deeper);
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(InvalidXpubError);
+      expect((err as InvalidXpubError).reason).toContain('depth 4');
+    }
+  });
+
+  it('rejects garbage base58 that merely starts with "xpub"', () => {
+    expect(() => deriveWithXpub('ethereum', 0, 'xpub-not-base58-at-all!!!')).toThrow(InvalidXpubError);
+  });
+
+  it('caches parsed roots (repeated calls with the same xpub stay consistent and cheap)', () => {
+    // Не проверяем внутренности LRU напрямую (приватный модульный Map), но
+    // многократный вызов с одним и тем же xpub обязан давать идентичный результат —
+    // это и есть наблюдаемый контракт кэша.
+    for (let i = 0; i < 20; i += 1) {
+      expect(deriveWithXpub('ethereum', 1, evmXpub).address).toBe(
+        new Deriver({ evm: evmXpub }).derive('ethereum', 1).address,
+      );
+    }
   });
 });

@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\Currency;
 use App\Enums\NetworkCode;
+use App\Services\WalletService;
 use App\Support\NetworkRegistry;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -50,6 +51,14 @@ class SelectInvoiceNetworkRequest extends FormRequest
 
             if (! $network?->is_enabled || ! $contract?->is_enabled) {
                 $validator->errors()->add('network', "{$currency} is not available on [{$networkCode}].");
+
+                return;
+            }
+
+            // A chain with no deposit wallet is never in `options`, so this can
+            // only be a hand-crafted request or a very stale page.
+            if (! app(WalletService::class)->isConfigured($networkCode)) {
+                $validator->errors()->add('network', "No deposit wallet is configured for [{$networkCode}], so it cannot accept payments right now.");
             }
         }];
     }

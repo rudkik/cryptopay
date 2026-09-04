@@ -5,6 +5,7 @@ namespace App\Http\Requests\V1;
 use App\Enums\Currency;
 use App\Enums\NetworkCode;
 use App\Rules\BoundedMetadata;
+use App\Rules\ConfiguredWallet;
 use App\Rules\PositiveAmount;
 use App\Support\Money;
 use Illuminate\Foundation\Http\FormRequest;
@@ -23,7 +24,7 @@ class StoreInvoiceRequest extends FormRequest
             // picks on the hosted checkout (SPEC §6.3); sending only one is a
             // half-configured invoice, not a default, so it is rejected.
             'currency' => ['required_with:network', 'nullable', Rule::in(array_column(Currency::cases(), 'value'))],
-            'network' => ['required_with:currency', 'nullable', Rule::in(array_column(NetworkCode::cases(), 'value'))],
+            'network' => ['required_with:currency', 'nullable', Rule::in(array_column(NetworkCode::cases(), 'value')), new ConfiguredWallet],
             'external_id' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:2000'],
             'customer_email' => ['nullable', 'email', 'max:255'],

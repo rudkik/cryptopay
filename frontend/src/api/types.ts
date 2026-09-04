@@ -166,6 +166,67 @@ export interface Network {
   tokens?: TokenContract[]
 }
 
+/** SPEC §3 — where the deposit key for a network comes from. */
+export type WalletSource = 'database' | 'env' | 'none'
+
+/** The most recent address derived from a network's key. */
+export interface WalletLastAddress {
+  address: string
+  derivation_index: number
+  explorer_url: string | null
+  created_at: string | null
+}
+
+/** Admin user who stored the current extended public key. */
+export interface WalletActor {
+  id: number
+  name: string
+}
+
+/** `GET /api/admin/wallets` — one entry per network, ordered ethereum, bsc, tron. */
+export interface WalletItem {
+  network: NetworkCode
+  network_name: string
+  standard: string | null
+  source: WalletSource
+  configured: boolean
+  /** Masked form only — the API never returns the full key. */
+  xpub_masked: string | null
+  derivation_path: string
+  label: string | null
+  xpub_set_at: string | null
+  xpub_set_by: WalletActor | null
+  next_index: number
+  addresses_issued: number
+  last_address: WalletLastAddress | null
+  /** Decimal strings keyed by currency — never parsed into floats. */
+  received: Record<string, string>
+  explorer_address_url: string | null
+  /** Only present on the `PUT` response when addresses had already been issued. */
+  warning?: string
+}
+
+/** One of the five addresses returned by the (write-free) preview endpoint. */
+export interface DerivedAddressPreview {
+  index: number
+  path: string
+  address: string
+}
+
+/** `GET /api/admin/wallets/{network}/addresses` row. */
+export interface IssuedAddress {
+  id: string
+  address: string
+  derivation_index: number
+  network: NetworkCode
+  invoice_id: string | null
+  merchant: MerchantRef | null
+  received: Record<string, string>
+  explorer_url: string | null
+  is_active: boolean
+  created_at: string | null
+}
+
 export interface Transaction {
   id: string
   invoice_id: string | null

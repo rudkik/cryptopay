@@ -80,6 +80,10 @@ Route::prefix('admin')->group(function () {
 
         Route::get('networks', [Admin\NetworkController::class, 'index']);
 
+        // Deposit wallets — the xpub every address is derived from (SPEC §3).
+        Route::get('wallets', [Admin\WalletController::class, 'index']);
+        Route::get('wallets/{network}/addresses', [Admin\WalletController::class, 'addresses']);
+
         Route::get('tokens', [Admin\TokenController::class, 'index']);
         Route::get('tokens/{token}', [Admin\TokenController::class, 'show']);
         Route::get('tokens/{token}/holdings', [Admin\TokenController::class, 'holdings']);
@@ -104,6 +108,12 @@ Route::prefix('admin')->group(function () {
 
             Route::post('invoices/{invoice}/cancel', [Admin\InvoiceController::class, 'cancel']);
             Route::post('invoices/{invoice}/simulate-payment', [Admin\InvoiceController::class, 'simulatePayment']);
+
+            // Deriving a preview writes nothing, but it decides where funds
+            // will land next, so it stays an admin-only action like the save.
+            Route::post('wallets/{network}/preview', [Admin\WalletController::class, 'preview']);
+            Route::put('wallets/{network}', [Admin\WalletController::class, 'update']);
+            Route::delete('wallets/{network}/xpub', [Admin\WalletController::class, 'destroyXpub']);
 
             Route::put('networks/{code}', [Admin\NetworkController::class, 'update']);
             Route::put('networks/{code}/tokens/{symbol}', [Admin\NetworkController::class, 'updateToken']);

@@ -239,7 +239,10 @@ paths:
       tags: [Networks]
       operationId: listNetworks
       summary: Включённые сети
-      description: Только `is_enabled` сети и только включённые контракты в них.
+      description: >-
+        Только `is_enabled` сети, только включённые контракты в них и только те сети, у которых
+        настроен депозитный кошелёк (xpub в базе либо env-ключ watcher'а, SPEC §3). Сеть без кошелька
+        не выдаёт адресов, поэтому и не предлагается: счёт с таким `network` вернёт `422`.
       responses:
         '200':
           description: Список сетей.

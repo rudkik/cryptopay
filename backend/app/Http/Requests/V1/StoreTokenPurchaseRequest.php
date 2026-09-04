@@ -5,6 +5,7 @@ namespace App\Http\Requests\V1;
 use App\Enums\Currency;
 use App\Enums\NetworkCode;
 use App\Rules\BoundedMetadata;
+use App\Rules\ConfiguredWallet;
 use App\Rules\PositiveAmount;
 use App\Support\Money;
 use Illuminate\Foundation\Http\FormRequest;
@@ -20,7 +21,7 @@ class StoreTokenPurchaseRequest extends FormRequest
             'pay_amount' => ['required_without:token_amount', 'nullable', 'regex:/^\d{1,10}(\.\d{1,18})?$/', new PositiveAmount(min: '0.000001', max: '1000000000')],
             // Both or neither, exactly as on POST /v1/invoices.
             'currency' => ['required_with:network', 'nullable', Rule::in(array_column(Currency::cases(), 'value'))],
-            'network' => ['required_with:currency', 'nullable', Rule::in(array_column(NetworkCode::cases(), 'value'))],
+            'network' => ['required_with:currency', 'nullable', Rule::in(array_column(NetworkCode::cases(), 'value')), new ConfiguredWallet],
             'customer_id' => ['required', 'string', 'max:255'],
             'customer_email' => ['nullable', 'email', 'max:255'],
             'external_id' => ['nullable', 'string', 'max:255'],
