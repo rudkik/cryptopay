@@ -22,6 +22,10 @@ class AdminApiTest extends TestCase
         parent::setUp();
         $this->seedNetworks();
         $this->fakeWatcher();
+
+        // Token sale is an optional module and ships off (config/features.php);
+        // these cases exercise it, so they turn it on explicitly.
+        config()->set('features.token_sale', true);
     }
 
     public function test_an_admin_logs_in_and_receives_a_sanctum_token(): void

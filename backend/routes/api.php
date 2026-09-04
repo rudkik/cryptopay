@@ -25,14 +25,19 @@ Route::prefix('v1')
         Route::get('balances', [V1\BalanceController::class, 'index']);
         Route::get('transactions', [V1\TransactionController::class, 'index']);
 
-        Route::get('tokens', [V1\TokenController::class, 'index']);
-        Route::get('tokens/{token}', [V1\TokenController::class, 'show']);
+        // Token sale is an optional module (config/features.php). With
+        // TOKEN_SALE_ENABLED off these paths answer 404 `not_found`; the rest
+        // of the merchant API is untouched.
+        Route::middleware('feature:token_sale')->group(function () {
+            Route::get('tokens', [V1\TokenController::class, 'index']);
+            Route::get('tokens/{token}', [V1\TokenController::class, 'show']);
 
-        Route::get('token-purchases', [V1\TokenPurchaseController::class, 'index']);
-        Route::post('token-purchases', [V1\TokenPurchaseController::class, 'store'])->middleware('idempotency');
-        Route::get('token-purchases/{purchase}', [V1\TokenPurchaseController::class, 'show']);
+            Route::get('token-purchases', [V1\TokenPurchaseController::class, 'index']);
+            Route::post('token-purchases', [V1\TokenPurchaseController::class, 'store'])->middleware('idempotency');
+            Route::get('token-purchases/{purchase}', [V1\TokenPurchaseController::class, 'show']);
 
-        Route::get('customers/{customer_id}/holdings', [V1\CustomerHoldingController::class, 'index']);
+            Route::get('customers/{customer_id}/holdings', [V1\CustomerHoldingController::class, 'index']);
+        });
 
         Route::get('me', V1\MeController::class);
     });
@@ -45,6 +50,11 @@ Route::prefix('v1')
 Route::prefix('public')
     ->middleware('throttle:public')
     ->group(function () {
+        // Bootstrap config for any client that has no credentials yet (the SPA
+        // reads it before login). Inside the `public` prefix on purpose, so it
+        // shares the 120 req/min per-IP limiter of SPEC §6.3.
+        Route::get('config', PublicApi\ConfigController::class);
+
         Route::get('invoices/{invoice}', [PublicApi\InvoiceController::class, 'show']);
         // Selecting a currency/network allocates the deposit address, so it is
         // a write on an unauthenticated route: it shares the public limiter and
@@ -84,11 +94,15 @@ Route::prefix('admin')->group(function () {
         Route::get('wallets', [Admin\WalletController::class, 'index']);
         Route::get('wallets/{network}/addresses', [Admin\WalletController::class, 'addresses']);
 
-        Route::get('tokens', [Admin\TokenController::class, 'index']);
-        Route::get('tokens/{token}', [Admin\TokenController::class, 'show']);
-        Route::get('tokens/{token}/holdings', [Admin\TokenController::class, 'holdings']);
-        Route::get('token-purchases', [Admin\TokenPurchaseController::class, 'index']);
-        Route::get('token-purchases/{tokenPurchase}', [Admin\TokenPurchaseController::class, 'show']);
+        // Same optional module as the merchant side — the admin panel reads
+        // `features.token_sale` from /auth/me and hides the section.
+        Route::middleware('feature:token_sale')->group(function () {
+            Route::get('tokens', [Admin\TokenController::class, 'index']);
+            Route::get('tokens/{token}', [Admin\TokenController::class, 'show']);
+            Route::get('tokens/{token}/holdings', [Admin\TokenController::class, 'holdings']);
+            Route::get('token-purchases', [Admin\TokenPurchaseController::class, 'index']);
+            Route::get('token-purchases/{tokenPurchase}', [Admin\TokenPurchaseController::class, 'show']);
+        });
 
         Route::get('webhooks', [Admin\WebhookController::class, 'index']);
         Route::get('webhooks/{webhook}', [Admin\WebhookController::class, 'show']);
@@ -118,9 +132,11 @@ Route::prefix('admin')->group(function () {
             Route::put('networks/{code}', [Admin\NetworkController::class, 'update']);
             Route::put('networks/{code}/tokens/{symbol}', [Admin\NetworkController::class, 'updateToken']);
 
-            Route::post('tokens', [Admin\TokenController::class, 'store']);
-            Route::put('tokens/{token}', [Admin\TokenController::class, 'update']);
-            Route::delete('tokens/{token}', [Admin\TokenController::class, 'destroy']);
+            Route::middleware('feature:token_sale')->group(function () {
+                Route::post('tokens', [Admin\TokenController::class, 'store']);
+                Route::put('tokens/{token}', [Admin\TokenController::class, 'update']);
+                Route::delete('tokens/{token}', [Admin\TokenController::class, 'destroy']);
+            });
 
             Route::post('webhooks/{webhook}/retry', [Admin\WebhookController::class, 'retry']);
 

@@ -15,6 +15,7 @@ import type { Column } from '@/components/table'
 import { invoicesApi } from '@/api/invoices'
 import { merchantsApi } from '@/api/merchants'
 import type { Invoice } from '@/api/types'
+import { useAuthStore } from '@/stores/auth'
 import { usePaginatedList } from '@/composables/usePaginatedList'
 import { formatRelative, truncateMiddle } from '@/utils/format'
 import {
@@ -25,6 +26,7 @@ import {
 } from '@/utils/options'
 
 const router = useRouter()
+const auth = useAuthStore()
 
 const { filters, items, meta, loading, hasFilters, load, setPage, resetFilters } = usePaginatedList<
   Invoice,
@@ -35,11 +37,11 @@ const { filters, items, meta, loading, hasFilters, load, setPage, resetFilters }
   perPage: 25,
 })
 
-const merchantOptions = ref<Option[]>([])
+const serviceOptions = ref<Option[]>([])
 
 const columns: Column[] = [
   { key: 'id', label: 'Invoice' },
-  { key: 'merchant', label: 'Merchant', hideBelow: 'lg' },
+  { key: 'merchant', label: 'Service', hideBelow: 'lg' },
   { key: 'amount', label: 'Amount', class: 'text-right' },
   { key: 'progress', label: 'Received', class: 'text-right', hideBelow: 'md' },
   { key: 'network', label: 'Network', hideBelow: 'sm' },
@@ -53,19 +55,19 @@ function open(invoice: Invoice): void {
   void router.push({ name: 'invoice-detail', params: { id: invoice.id } })
 }
 
-async function loadMerchants(): Promise<void> {
+async function loadServices(): Promise<void> {
   try {
     const response = await merchantsApi.list({ per_page: 100 })
-    merchantOptions.value = (response.data ?? []).map((m) => ({ value: m.id, label: m.name }))
+    serviceOptions.value = (response.data ?? []).map((m) => ({ value: m.id, label: m.name }))
   } catch {
-    // The filter simply stays unavailable if merchants cannot be listed.
-    merchantOptions.value = []
+    // The filter simply stays unavailable if services cannot be listed.
+    serviceOptions.value = []
   }
 }
 
 onMounted(() => {
   void load()
-  void loadMerchants()
+  void loadServices()
 })
 </script>
 
@@ -84,10 +86,11 @@ onMounted(() => {
         <SelectFilter v-model="filters.network" label="Network" :options="NETWORK_OPTIONS" />
         <SelectFilter v-model="filters.currency" label="Currency" :options="CURRENCY_OPTIONS" />
         <SelectFilter
-          v-if="merchantOptions.length"
+          v-if="serviceOptions.length"
           v-model="filters.merchant_id"
-          label="Merchant"
-          :options="merchantOptions"
+          label="Service"
+          placeholder="All services"
+          :options="serviceOptions"
         />
       </FilterBar>
 
@@ -103,7 +106,12 @@ onMounted(() => {
           <div class="min-w-0">
             <p class="mono truncate text-text">{{ truncateMiddle(row.id, 8, 6) }}</p>
             <p v-if="row.external_id" class="truncate text-xs text-muted">{{ row.external_id }}</p>
-            <p v-else-if="row.type === 'token_purchase'" class="text-xs text-accent-ink">Token purchase</p>
+            <p
+              v-else-if="auth.tokenSaleEnabled && row.type === 'token_purchase'"
+              class="text-xs text-accent-ink"
+            >
+              Token purchase
+            </p>
           </div>
         </template>
         <template #cell-merchant="{ row }">

@@ -270,11 +270,11 @@ onMounted(async () => {
               <p class="text-[11px] text-muted">{{ soldPercent.toFixed(1) }}% of supply sold</p>
             </div>
             <div class="flex items-baseline justify-between gap-3 border-t border-border pt-3.5">
-              <dt class="text-xs text-muted">Merchant</dt>
+              <dt class="text-xs text-muted">Service</dt>
               <dd class="min-w-0 truncate">
                 <RouterLink
                   v-if="token.merchant"
-                  :to="{ name: 'merchant-detail', params: { id: token.merchant.id } }"
+                  :to="{ name: 'service-detail', params: { id: token.merchant.id } }"
                   class="link text-sm"
                 >
                   {{ token.merchant.name }}

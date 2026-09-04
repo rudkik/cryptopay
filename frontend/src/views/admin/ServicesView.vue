@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Store } from 'lucide-vue-next'
+import { Plug, Plus } from 'lucide-vue-next'
 import DataTable from '@/components/DataTable.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import FilterBar from '@/components/FilterBar.vue'
@@ -11,6 +11,8 @@ import Pagination from '@/components/Pagination.vue'
 import Spinner from '@/components/Spinner.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import type { Column } from '@/components/table'
+// The API vocabulary is unchanged (SPEC §6.4): a "service" in the admin UI is
+// a `merchant` on the wire — one connected project with its own API keys.
 import { merchantsApi, type MerchantPayload } from '@/api/merchants'
 import type { Merchant } from '@/api/types'
 import { usePaginatedList } from '@/composables/usePaginatedList'
@@ -30,7 +32,7 @@ const { filters, items, meta, loading, hasFilters, load, setPage, resetFilters }
 })
 
 const columns: Column[] = [
-  { key: 'name', label: 'Merchant' },
+  { key: 'name', label: 'Service' },
   { key: 'email', label: 'Email', hideBelow: 'md' },
   { key: 'webhook_url', label: 'Webhook', hideBelow: 'lg' },
   { key: 'is_active', label: 'Status' },
@@ -55,25 +57,25 @@ async function submit(): Promise<void> {
   saving.value = true
   errors.value = {}
   try {
-    const merchant = await merchantsApi.create({
+    const service = await merchantsApi.create({
       name: form.name.trim(),
       email: form.email?.trim() || null,
       webhook_url: form.webhook_url?.trim() || null,
       is_active: form.is_active,
     })
-    toast.success('Merchant created', merchant.name)
+    toast.success('Service created', service.name)
     createOpen.value = false
-    void router.push({ name: 'merchant-detail', params: { id: merchant.id } })
+    void router.push({ name: 'service-detail', params: { id: service.id } })
   } catch (error) {
     errors.value = fieldErrors(error)
-    reportError(error, 'Could not create the merchant')
+    reportError(error, 'Could not create the service')
   } finally {
     saving.value = false
   }
 }
 
-function open(merchant: Merchant): void {
-  void router.push({ name: 'merchant-detail', params: { id: merchant.id } })
+function open(service: Merchant): void {
+  void router.push({ name: 'service-detail', params: { id: service.id } })
 }
 
 onMounted(() => void load())
@@ -81,11 +83,14 @@ onMounted(() => void load())
 
 <template>
   <div class="space-y-6">
-    <PageHeader title="Merchants" description="Accounts that create invoices through the merchant API.">
+    <PageHeader
+      title="Services"
+      description="Your connected projects — each one gets API keys, a webhook URL and its own balances."
+    >
       <template #actions>
         <button type="button" class="btn-primary" @click="openCreate">
           <Plus :size="15" aria-hidden="true" />
-          New merchant
+          New service
         </button>
       </template>
     </PageHeader>
@@ -93,7 +98,7 @@ onMounted(() => void load())
     <section class="card overflow-hidden">
       <FilterBar
         v-model:search="filters.q"
-        search-label="Search merchants"
+        search-label="Search services"
         :has-filters="hasFilters"
         @reset="resetFilters"
       />
@@ -103,7 +108,7 @@ onMounted(() => void load())
         :rows="items"
         :loading="loading"
         clickable
-        caption="Merchants"
+        caption="Services"
         @row-click="open"
       >
         <template #cell-name="{ row }">
@@ -128,13 +133,13 @@ onMounted(() => void load())
         </template>
         <template #empty>
           <EmptyState
-            :icon="Store"
-            title="No merchants yet"
-            description="Create a merchant to issue API keys and start accepting payments."
+            :icon="Plug"
+            title="No services yet"
+            description="Add a service to issue API keys and start accepting payments."
           >
             <button type="button" class="btn-primary" @click="openCreate">
               <Plus :size="15" aria-hidden="true" />
-              New merchant
+              New service
             </button>
           </EmptyState>
         </template>
@@ -145,11 +150,11 @@ onMounted(() => void load())
 
     <Modal
       :open="createOpen"
-      title="New merchant"
+      title="New service"
       description="A webhook secret is generated automatically."
       @close="createOpen = false"
     >
-      <form id="merchant-form" class="space-y-4" novalidate @submit.prevent="submit">
+      <form id="service-form" class="space-y-4" novalidate @submit.prevent="submit">
         <div>
           <label for="m-name" class="label">Name <span class="text-danger">*</span></label>
           <input
@@ -201,9 +206,9 @@ onMounted(() => void load())
       </form>
       <template #footer>
         <button type="button" class="btn-secondary" @click="createOpen = false">Cancel</button>
-        <button type="submit" form="merchant-form" class="btn-primary" :disabled="saving">
+        <button type="submit" form="service-form" class="btn-primary" :disabled="saving">
           <Spinner v-if="saving" :size="14" />
-          Create merchant
+          Create service
         </button>
       </template>
     </Modal>

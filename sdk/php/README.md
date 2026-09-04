@@ -255,6 +255,13 @@ $balances = CryptoPay::balances();
 
 ## Пополнение баланса / продажа токенов через `customer_id`
 
+> **Модуль token sale опционален.** Методы этого раздела (`tokens()`,
+> `getToken()`, `createTokenPurchase()`, `listTokenPurchases()`,
+> `getTokenPurchase()`, `customerHoldings()`) работают, только если на сервере включён
+> `TOKEN_SALE_ENABLED=true`. Иначе сервер отвечает `404 not_found` с сообщением
+> «Token sale module is disabled». Текущее значение флага можно прочитать без
+> авторизации: `GET /api/public/config` → `features.token_sale`.
+
 Для сценария "покупатель пополняет баланс/покупает внутренний токен
 мерчанта" используется `createTokenPurchase` — ответ **не обёрнут** в
 `data`, а возвращает `{purchase, invoice}` напрямую:

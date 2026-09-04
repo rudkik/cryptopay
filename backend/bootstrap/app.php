@@ -6,6 +6,7 @@ use App\Http\Middleware\AuthenticateApiKey;
 use App\Http\Middleware\AuthenticateInternal;
 use App\Http\Middleware\EnsureActiveUser;
 use App\Http\Middleware\EnsureAdminRole;
+use App\Http\Middleware\FeatureEnabled;
 use App\Http\Middleware\IdempotencyKey;
 use App\Http\Middleware\LimitRequestSize;
 use App\Http\Middleware\SecurityHeaders;
@@ -77,6 +78,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin' => EnsureAdminRole::class,
             'active' => EnsureActiveUser::class,
             'idempotency' => IdempotencyKey::class,
+            // `feature:token_sale` — optional modules, config/features.php.
+            'feature' => FeatureEnabled::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

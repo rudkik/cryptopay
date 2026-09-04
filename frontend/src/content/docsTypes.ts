@@ -45,6 +45,8 @@ export interface DocSection {
   id: string
   title: string
   blocks: DocBlock[]
+  /** Rendered only while the named server feature is enabled (SPEC §8). */
+  feature?: 'token_sale'
 }
 
 export interface DocGroup {

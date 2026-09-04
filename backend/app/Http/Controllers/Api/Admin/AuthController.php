@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\LoginRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Support\FeatureFlags;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -50,6 +51,9 @@ class AuthController extends Controller
         return response()->json([
             'token' => $token->plainTextToken,
             'user' => (new UserResource($user))->toArray($request),
+            // Optional modules of this deployment: the panel hides whole
+            // sections on these, so it must not have to guess (config/features.php).
+            'features' => FeatureFlags::all(),
         ]);
     }
 
@@ -68,6 +72,7 @@ class AuthController extends Controller
     {
         return response()->json([
             'user' => (new UserResource($request->user()))->toArray($request),
+            'features' => FeatureFlags::all(),
         ]);
     }
 }

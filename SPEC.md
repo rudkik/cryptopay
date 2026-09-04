@@ -132,6 +132,7 @@ Auth: `Authorization: Bearer cp_live_...`. Rate limit 120 req/min на ключ.
 - `GET /api/v1/networks` → `[ { "code", "name", "chain_id", "confirmations_required", "tokens": [ { "symbol", "contract_address", "decimals" } ] } ]` (только enabled).
 - `GET /api/v1/balances` → `[ { "currency", "network", "available", "pending" } ]` + `totals` по currency.
 - `GET /api/v1/transactions` — фильтры `invoice_id`, `network`, `status`, пагинация.
+- **Token sale (опциональный модуль, §6.4).** Все эндпоинты ниже живут только при `TOKEN_SALE_ENABLED=true`; иначе — `404 not_found` с сообщением «Token sale module is disabled».
 - `GET /api/v1/tokens` — токены мерчанта (active).
 - `POST /api/v1/token-purchases` — `token_id`, одно из `token_amount` | `pay_amount`, `currency` (optional), `network` (optional; пара — как у счетов), `customer_id` (required), `customer_email?`, `external_id?`, `success_url?`, `cancel_url?`, `metadata?`, `expires_in?` → 201 `{ "purchase": {...}, "invoice": Invoice }`. Цена фиксируется на момент создания; `pay_amount = token_amount * price_usd` (USDT/USDC считаем = 1 USD).
 - `GET /api/v1/token-purchases/{id}`; `GET /api/v1/token-purchases?customer_id=`.
@@ -157,10 +158,11 @@ Rate limit 120 req/min на IP на весь префикс. `{id}` обязан
   `standard` выводится из кода сети: ethereum → ERC‑20, bsc → BEP‑20, tron → TRC‑20.
 - `POST /api/public/invoices/{id}/select` — body `{ "currency": "USDT|USDC", "network": "ethereum|bsc|tron" }` → 200 Invoice (тот же публичный объект, уже с `address`, `qr_payload`, `network_name` и `selection_required: false`).
   Разрешён, только пока счёт `pending`, адрес ещё не выделен и `expires_at` не прошёл; иначе 409 `invalid_state`. Пара вне списка `options` → 422. Выбор выделяет адрес через AddressService **не более одного раза на счёт**: строка счёта берётся под `lockForUpdate`, повторная проверка идёт внутри транзакции, поэтому двойной сабмит с чекаута не порождает второй адрес (второй запрос получает 409).
+- `GET /api/public/config` → `{ "features": { "token_sale": bool }, "networks": ["ethereum","bsc","tron"] }` — флаги опциональных модулей (§8) и коды **enabled**-сетей. Без auth, тот же лимитер `public`; ничего приватного не отдаёт.
 - Фронт поллит `GET` каждые 5с.
 
 ### 6.4 Admin API — `/api/admin/*`
-Auth: Laravel Sanctum, `POST /api/admin/auth/login {email,password}` → `{ token, user }` (personal access token), затем `Authorization: Bearer <token>`. `POST /api/admin/auth/logout`, `GET /api/admin/auth/me`.
+Auth: Laravel Sanctum, `POST /api/admin/auth/login {email,password}` → `{ token, user, features }` (personal access token), затем `Authorization: Bearer <token>`. `POST /api/admin/auth/logout`, `GET /api/admin/auth/me` → `{ user, features }`. `features` = `{ "token_sale": bool }` — состояние опциональных модулей (§8); админка по нему прячет пункт меню и закрывает роуты.
 - `GET /api/admin/dashboard` → `{ stats: { invoices_total, invoices_paid, volume_24h: {USDT, USDC}, volume_total, merchants_active, pending_webhooks }, chart: [ {date, USDT, USDC} ] (30 дней), recent_invoices: [...], networks: [ {code, is_enabled, watcher_healthy, last_scanned_block, watcher_seen_at} ] }`.
 - Merchants: `GET /merchants`, `POST /merchants`, `GET /merchants/{id}` (включая balances, api_keys, webhook_url), `PUT /merchants/{id}`, `POST /merchants/{id}/api-keys {name}` → `{ key: "cp_live_..." (один раз), api_key: {...} }`, `DELETE /merchants/{id}/api-keys/{keyId}` (revoke), `POST /merchants/{id}/webhook-secret/rotate`.
 - Invoices: `GET /invoices` (фильтры как в v1 + `merchant_id`, `q` по id/external_id/address), `GET /invoices/{id}` (с transactions, webhooks), `POST /invoices/{id}/cancel`, `POST /invoices/{id}/simulate-payment {amount?, confirmed?: bool}` — только если `SIMULATION_ENABLED=true`: создаёт фейковую транзакцию через тот же pipeline, что и watcher (для демо/QA).
@@ -183,7 +185,7 @@ Auth: Laravel Sanctum, `POST /api/admin/auth/login {email,password}` → `{ toke
   - `GET /wallets/{network}/addresses?page=&per_page=` → пагинированный список `deposit_addresses` сети:
     `{ id, address, derivation_index, network, invoice_id, merchant {id,name}|null, received {USDT,USDC}
     (подтверждённые транзакции на этот адрес), explorer_url, is_active, created_at }`.
-- Tokens: CRUD `/tokens`, `GET /token-purchases`, `GET /tokens/{id}/holdings`.
+- Tokens (**только при `TOKEN_SALE_ENABLED=true`**, иначе `404 not_found` «Token sale module is disabled»): CRUD `/tokens`, `GET /token-purchases`, `GET /token-purchases/{id}`, `GET /tokens/{id}/holdings`. Флаг закрывает и merchant-эндпоинты `/api/v1/tokens*`, `/api/v1/token-purchases*`, `/api/v1/customers/{id}/holdings` (§6.1); создание обычных счетов (`POST /api/v1/invoices`) и статистика дашборда от флага не зависят, демо-сидер при выключенном флаге токены не создаёт (уже созданные строки остаются).
 - Webhooks: `GET /webhooks` (фильтры merchant_id, status), `POST /webhooks/{id}/retry`.
 - Ledger/balances: `GET /balances?merchant_id=`, `GET /ledger?merchant_id=`.
 - Users: CRUD `/users` (только role admin).
@@ -236,6 +238,7 @@ APP_KEY=                        # генерируется entrypoint'ом, ес
 APP_ENV=local
 APP_DEBUG=true
 SIMULATION_ENABLED=true         # разрешить /simulate-payment в админке (выключить в проде)
+TOKEN_SALE_ENABLED=false        # модуль продажи токенов: off = /tokens*, /token-purchases*, /holdings отдают 404
 
 DB_HOST=postgres DB_PORT=5432 DB_DATABASE=cryptopay DB_USERNAME=cryptopay DB_PASSWORD=secret
 REDIS_HOST=redis
@@ -282,7 +285,9 @@ WATCHER_ENABLED=true            # false = watcher только дериваци�
 
 Логотипы сетей и токенов — Vue-компоненты в `frontend/src/components/icons/` (`EthereumLogo`, `BnbLogo`, `TronLogo`, `UsdtLogo`, `UsdcLogo`), собранные из CC0-набора в `src/assets/crypto/*.svg`. Диспетчер `icons/CryptoLogo.vue` принимает `kind` (`ethereum` | `bsc` | `tron` | `USDT` | `USDC`); обёртки — `NetworkIcon.vue` и `CoinLogo.vue`. SVG инлайнится как шаблон компонента: ни `v-html`, ни внешних URL — CSP `img-src` не задействован.
 
-Роуты: `/login`; `/admin` (dashboard), `/admin/merchants`, `/admin/merchants/:id`, `/admin/invoices`, `/admin/invoices/:id`, `/admin/transactions`, `/admin/networks`, `/admin/tokens`, `/admin/tokens/:id`, `/admin/webhooks`, `/admin/users`, `/admin/docs` (документация merchant API с примерами curl/PHP/JS и описанием подписи вебхуков); публичная `/pay/:id` — hosted checkout (сумма, сеть/токен, адрес с копированием, QR, таймер, прогресс подтверждений, статусы, кнопка success_url при оплате; при `selection_required` — шаг выбора валюты и сети из `options` с подтверждениями и оценкой времени, после `POST .../select` адрес появляется без перезагрузки).
+Роуты: `/login`; `/admin` (dashboard), `/admin/services`, `/admin/services/:id`, `/admin/invoices`, `/admin/invoices/:id`, `/admin/transactions`, `/admin/wallet`, `/admin/networks`, `/admin/tokens`, `/admin/tokens/:id`, `/admin/webhooks`, `/admin/users`, `/admin/docs` (документация merchant API с примерами curl/PHP/JS и описанием подписи вебхуков); публичная `/pay/:id` — hosted checkout (сумма, сеть/токен, адрес с копированием, QR, таймер, прогресс подтверждений, статусы, кнопка success_url при оплате; при `selection_required` — шаг выбора валюты и сети из `options` с подтверждениями и оценкой времени, после `POST .../select` адрес появляется без перезагрузки).
+
+**Словарь админки.** В UI мерчант называется **Service** («сервис» — подключённый проект со своими API-ключами, webhook URL и балансами). Это только фронтенд: пути API, поля JSON (`merchant`, `merchant_id`), таблицы БД и SDK остаются с термином `merchant`. Старые пути `/admin/merchants` и `/admin/merchants/:id` редиректят на `/admin/services*`. Пункт меню **Tokens** и роуты `/admin/tokens*` показываются только при `features.token_sale = true` (§6.4); при выключенном модуле переход на них редиректит на `/admin` с тостом «Token sale module is disabled».
 
 Все запросы через `/api` (тот же origin, проксирует nginx). Токен админа — в `localStorage`, axios interceptor, редирект на `/login` при 401.
 

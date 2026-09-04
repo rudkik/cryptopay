@@ -30,6 +30,7 @@ import { invoicesApi } from '@/api/invoices'
 import { webhooksApi } from '@/api/webhooks'
 import type { Invoice, InvoiceStatus, WebhookDelivery } from '@/api/types'
 import { isApiError } from '@/api/http'
+import { useAuthStore } from '@/stores/auth'
 import { reportError } from '@/composables/useErrorHandler'
 import { toast } from '@/utils/toast'
 import { safeUrl } from '@/utils/url'
@@ -44,6 +45,8 @@ import {
 import { NETWORK_NAMES } from '@/utils/options'
 
 const props = defineProps<{ id: string }>()
+
+const auth = useAuthStore()
 
 const invoice = ref<Invoice | null>(null)
 const loading = ref(true)
@@ -302,7 +305,10 @@ onMounted(() => void load())
                   Awaiting network selection
                 </span>
                 <span v-else class="chip">Network —</span>
-                <span v-if="invoice.type === 'token_purchase'" class="chip border-accent/25 bg-accent-soft text-accent-ink">
+                <span
+                  v-if="auth.tokenSaleEnabled && invoice.type === 'token_purchase'"
+                  class="chip border-accent/25 bg-accent-soft text-accent-ink"
+                >
                   Token purchase
                 </span>
               </div>
@@ -362,11 +368,11 @@ onMounted(() => void load())
               <dd class="mono mt-0.5 truncate">{{ invoice.external_id ?? '—' }}</dd>
             </div>
             <div class="min-w-0">
-              <dt class="text-xs text-muted">Merchant</dt>
+              <dt class="text-xs text-muted">Service</dt>
               <dd class="mt-0.5 truncate">
                 <RouterLink
                   v-if="invoice.merchant"
-                  :to="{ name: 'merchant-detail', params: { id: invoice.merchant.id } }"
+                  :to="{ name: 'service-detail', params: { id: invoice.merchant.id } }"
                   class="link"
                 >
                   {{ invoice.merchant.name }}
@@ -565,7 +571,7 @@ onMounted(() => void load())
             <EmptyState
               :icon="Webhook"
               title="No deliveries"
-              description="This merchant has no webhook URL, or no event has fired yet."
+              description="This service has no webhook URL, or no event has fired yet."
               compact
             />
           </template>
@@ -576,7 +582,7 @@ onMounted(() => void load())
     <ConfirmDialog
       :open="cancelOpen"
       title="Cancel this invoice?"
-      message="The checkout page will stop accepting payment. Funds sent after cancellation are still credited to the merchant balance."
+      message="The checkout page will stop accepting payment. Funds sent after cancellation are still credited to the service balance."
       confirm-label="Cancel invoice"
       tone="danger"
       :loading="cancelling"

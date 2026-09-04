@@ -290,7 +290,7 @@ const addressColumns: Column[] = [
   { key: 'address', label: 'Address' },
   { key: 'derivation_index', label: 'Index', class: 'text-right', hideBelow: 'sm' },
   { key: 'network', label: 'Network', hideBelow: 'md' },
-  { key: 'merchant', label: 'Merchant', hideBelow: 'lg' },
+  { key: 'merchant', label: 'Service', hideBelow: 'lg' },
   { key: 'invoice_id', label: 'Invoice', hideBelow: 'lg' },
   { key: 'received', label: 'Received', class: 'text-right' },
   { key: 'created_at', label: 'Issued', class: 'text-right', hideBelow: 'md' },

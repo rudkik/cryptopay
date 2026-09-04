@@ -2,21 +2,32 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { authApi } from '@/api/auth'
 import { readStoredToken, writeStoredToken } from '@/api/http'
-import type { AdminUser } from '@/api/types'
+import type { AdminUser, AppFeatures, MeResponse } from '@/api/types'
 
-function unwrapUser(payload: AdminUser | { user: AdminUser }): AdminUser {
+function unwrapUser(payload: AdminUser | MeResponse): AdminUser {
   return 'user' in payload ? payload.user : payload
+}
+
+/**
+ * Optional modules default to off: an older backend that does not send
+ * `features` must not light up a module the server will 404 anyway.
+ */
+function defaultFeatures(): AppFeatures {
+  return { token_sale: false }
 }
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(readStoredToken())
   const user = ref<AdminUser | null>(null)
+  /** Server-side feature flags (SPEC §8) — drive nav visibility and route guards. */
+  const features = ref<AppFeatures>(defaultFeatures())
   const loading = ref(false)
   /** True once we've attempted to resolve the session for the stored token. */
   const resolved = ref(false)
 
   const isAuthenticated = computed(() => Boolean(token.value))
   const isAdmin = computed(() => user.value?.role === 'admin')
+  const tokenSaleEnabled = computed(() => features.value.token_sale === true)
   const initials = computed(() => {
     const name = user.value?.name?.trim() || user.value?.email || ''
     if (!name) return '—'
@@ -24,9 +35,10 @@ export const useAuthStore = defineStore('auth', () => {
     return (parts[0]?.[0] ?? '').concat(parts[1]?.[0] ?? '').toUpperCase() || name[0]!.toUpperCase()
   })
 
-  function setSession(nextToken: string, nextUser: AdminUser): void {
+  function setSession(nextToken: string, nextUser: AdminUser, nextFeatures?: AppFeatures): void {
     token.value = nextToken
     user.value = nextUser
+    features.value = { ...defaultFeatures(), ...(nextFeatures ?? {}) }
     resolved.value = true
     writeStoredToken(nextToken)
   }
@@ -34,6 +46,7 @@ export const useAuthStore = defineStore('auth', () => {
   function clear(): void {
     token.value = null
     user.value = null
+    features.value = defaultFeatures()
     resolved.value = true
     writeStoredToken(null)
   }
@@ -42,7 +55,7 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     try {
       const response = await authApi.login(email, password)
-      setSession(response.token, response.user)
+      setSession(response.token, response.user, response.features)
     } finally {
       loading.value = false
     }
@@ -57,6 +70,10 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const payload = await authApi.me()
       user.value = unwrapUser(payload)
+      features.value = {
+        ...defaultFeatures(),
+        ...('features' in payload ? (payload.features ?? {}) : {}),
+      }
       return user.value
     } catch {
       // 401 is handled by the axios interceptor; anything else means no session.
@@ -80,10 +97,12 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     token,
     user,
+    features,
     loading,
     resolved,
     isAuthenticated,
     isAdmin,
+    tokenSaleEnabled,
     initials,
     login,
     logout,

@@ -1,5 +1,5 @@
 import { get, post } from './http'
-import type { AdminUser, LoginResponse } from './types'
+import type { AdminUser, LoginResponse, MeResponse, PublicConfig } from './types'
 
 export const authApi = {
   login: (email: string, password: string) =>
@@ -7,5 +7,8 @@ export const authApi = {
 
   logout: () => post<{ ok?: boolean }>('/admin/auth/logout'),
 
-  me: () => get<AdminUser | { user: AdminUser }>('/admin/auth/me'),
+  me: () => get<AdminUser | MeResponse>('/admin/auth/me'),
+
+  /** Unauthenticated feature/network probe (SPEC §6.3). */
+  publicConfig: () => get<PublicConfig>('/public/config'),
 }

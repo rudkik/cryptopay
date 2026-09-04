@@ -1,8 +1,8 @@
 # CryptoPay
 
 Процессинг приёма платежей в **USDT / USDC** в сетях **Ethereum (ERC‑20)**, **BSC (BEP‑20)** и **Tron (TRC‑20)**:
-зачисление средств мерчантам, hosted‑checkout, продажа токенов (token sale), вебхуки и merchant API для подключения
-к любым вашим проектам.
+зачисление средств мерчантам, hosted‑checkout, продажа токенов (token sale, опционально), вебхуки и merchant API
+для подключения к любым вашим проектам.
 
 | Сервис      | Стек                                   | Назначение                                                         |
 |-------------|----------------------------------------|--------------------------------------------------------------------|
@@ -25,6 +25,11 @@ make up                       # docker compose up -d --build
 - Merchant API: http://localhost:8095/api/v1 — демо‑ключ печатается в логах `app` при первом старте
   (`docker compose logs app | grep cp_live_`)
 - Документация API с примерами: http://localhost:8095/admin/docs
+
+Разделы админки: **Dashboard**, **Invoices**, **Transactions**, **Webhooks**, **Services**, **Wallet**, **Networks**,
+**Admin users**, **API docs**, **Swagger**. **Service** — это подключённый проект (в API он по-прежнему `merchant`):
+свои API-ключи, webhook URL и балансы. Раздел **Tokens** (продажа токенов) появляется только при
+`TOKEN_SALE_ENABLED=true`.
 
 ### Ключи кошелька (xpub)
 
@@ -65,7 +70,7 @@ Env‑переменные `EVM_XPUB` / `TRON_XPUB` в `.env` остаются *
 
 ## Как подключить оплату к своему проекту
 
-1. В админке создайте мерчанта и API‑ключ (`cp_live_…`), укажите `webhook_url`.
+1. В админке создайте сервис (**Services → New service**; в API это `merchant`) и API‑ключ (`cp_live_…`), укажите `webhook_url`.
 2. Создайте счёт:
 
 ```bash
@@ -78,8 +83,10 @@ curl -X POST http://localhost:8095/api/v1/invoices \
 4. Получите вебхук `invoice.paid` (подпись `X-CryptoPay-Signature: sha256=HMAC_SHA256(secret, timestamp + "." + body)`)
    или опросите `GET /api/v1/invoices/{id}`.
 
-Покупка токенов: `POST /api/v1/token-purchases` создаёт счёт, после оплаты токены зачисляются на `customer_id`
-(`GET /api/v1/customers/{customer_id}/holdings`). Полный список эндпоинтов — SPEC.md §6 и страница `/admin/docs`.
+Покупка токенов (опциональный модуль, по умолчанию выключен — включается `TOKEN_SALE_ENABLED=true`):
+`POST /api/v1/token-purchases` создаёт счёт, после оплаты токены зачисляются на `customer_id`
+(`GET /api/v1/customers/{customer_id}/holdings`). При выключенном модуле все эндпоинты token sale отдают `404`,
+а раздел «Tokens» в админке скрыт. Полный список эндпоинтов — SPEC.md §6 и страница `/admin/docs`.
 
 ## SDK для подключения (готовые обёртки)
 

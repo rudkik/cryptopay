@@ -1,6 +1,13 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import AdminLayout from '@/layouts/AdminLayout.vue'
 import { useAuthStore } from '@/stores/auth'
+import type { AppFeatures } from '@/api/types'
+import { toast } from '@/utils/toast'
+
+/** Message shown when a route is gated behind a disabled server feature. */
+const FEATURE_DISABLED: Record<keyof AppFeatures, string> = {
+  token_sale: 'Token sale module is disabled',
+}
 
 const routes: RouteRecordRaw[] = [
   {
@@ -27,17 +34,26 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'Dashboard' },
       },
       {
-        path: 'merchants',
-        name: 'merchants',
-        component: () => import('@/views/admin/MerchantsView.vue'),
-        meta: { title: 'Merchants' },
+        // "Service" is the admin-side name for what the API still calls a
+        // merchant (SPEC §9): one connected project with its API keys,
+        // webhook URL and balances. Only the UI vocabulary changed.
+        path: 'services',
+        name: 'services',
+        component: () => import('@/views/admin/ServicesView.vue'),
+        meta: { title: 'Services' },
       },
       {
-        path: 'merchants/:id',
-        name: 'merchant-detail',
-        component: () => import('@/views/admin/MerchantDetailView.vue'),
-        meta: { title: 'Merchant' },
+        path: 'services/:id',
+        name: 'service-detail',
+        component: () => import('@/views/admin/ServiceDetailView.vue'),
+        meta: { title: 'Service' },
         props: true,
+      },
+      // Bookmarks and links from before the rename keep working.
+      { path: 'merchants', redirect: { name: 'services' } },
+      {
+        path: 'merchants/:id',
+        redirect: (to) => ({ name: 'service-detail', params: { id: to.params.id } }),
       },
       {
         path: 'invoices',
@@ -74,13 +90,13 @@ const routes: RouteRecordRaw[] = [
         path: 'tokens',
         name: 'tokens',
         component: () => import('@/views/admin/TokensView.vue'),
-        meta: { title: 'Tokens' },
+        meta: { title: 'Tokens', feature: 'token_sale' },
       },
       {
         path: 'tokens/:id',
         name: 'token-detail',
         component: () => import('@/views/admin/TokenDetailView.vue'),
-        meta: { title: 'Token' },
+        meta: { title: 'Token', feature: 'token_sale' },
         props: true,
       },
       {
@@ -155,6 +171,14 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.adminOnly && !auth.isAdmin) return { path: '/admin' }
+
+  // Optional modules (SPEC §8): the API 404s them when the flag is off, so the
+  // screens must not be reachable either — `features` is resolved by now.
+  const feature = to.meta.feature as keyof AppFeatures | undefined
+  if (feature && !auth.features[feature]) {
+    toast.error(FEATURE_DISABLED[feature])
+    return { path: '/admin' }
+  }
 
   return true
 })

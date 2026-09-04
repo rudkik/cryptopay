@@ -33,14 +33,14 @@ const { filters, items, meta, loading, hasFilters, load, setPage, resetFilters }
   perPage: 25,
 })
 
-const merchantOptions = ref<Option[]>([])
+const serviceOptions = ref<Option[]>([])
 
 /** Token art is an operator-supplied remote URL — only plain http(s) is rendered. */
 const tokenImage = safeImageUrl
 
 const columns: Column[] = [
   { key: 'symbol', label: 'Token' },
-  { key: 'merchant', label: 'Merchant', hideBelow: 'md' },
+  { key: 'merchant', label: 'Service', hideBelow: 'md' },
   { key: 'price_usd', label: 'Price (USD)', class: 'text-right' },
   { key: 'sold', label: 'Sold', class: 'text-right', hideBelow: 'sm' },
   { key: 'total_supply', label: 'Supply', class: 'text-right', hideBelow: 'lg' },
@@ -67,7 +67,7 @@ const form = reactive<TokenPayload>({
 
 function openCreate(): void {
   Object.assign(form, {
-    merchant_id: merchantOptions.value[0]?.value ?? '',
+    merchant_id: serviceOptions.value[0]?.value ?? '',
     symbol: '',
     name: '',
     description: '',
@@ -111,18 +111,18 @@ async function submit(): Promise<void> {
   }
 }
 
-async function loadMerchants(): Promise<void> {
+async function loadServices(): Promise<void> {
   try {
     const response = await merchantsApi.list({ per_page: 100 })
-    merchantOptions.value = (response.data ?? []).map((m) => ({ value: m.id, label: m.name }))
+    serviceOptions.value = (response.data ?? []).map((m) => ({ value: m.id, label: m.name }))
   } catch {
-    merchantOptions.value = []
+    serviceOptions.value = []
   }
 }
 
 onMounted(() => {
   void load()
-  void loadMerchants()
+  void loadServices()
 })
 </script>
 
@@ -145,10 +145,11 @@ onMounted(() => {
         @reset="resetFilters"
       >
         <SelectFilter
-          v-if="merchantOptions.length"
+          v-if="serviceOptions.length"
           v-model="filters.merchant_id"
-          label="Merchant"
-          :options="merchantOptions"
+          label="Service"
+          placeholder="All services"
+          :options="serviceOptions"
         />
       </FilterBar>
 
@@ -219,17 +220,17 @@ onMounted(() => {
     <Modal :open="createOpen" title="New token" size="lg" @close="createOpen = false">
       <form id="token-form" class="grid grid-cols-1 gap-4 sm:grid-cols-2" novalidate @submit.prevent="submit">
         <div class="sm:col-span-2">
-          <label for="t-merchant" class="label">Merchant <span class="text-danger">*</span></label>
+          <label for="t-service" class="label">Service <span class="text-danger">*</span></label>
           <select
-            id="t-merchant"
+            id="t-service"
             v-model="form.merchant_id"
             required
             data-autofocus
             class="input"
             :class="errors.merchant_id ? 'input-error' : ''"
           >
-            <option value="" disabled>Select a merchant</option>
-            <option v-for="option in merchantOptions" :key="option.value" :value="option.value">
+            <option value="" disabled>Select a service</option>
+            <option v-for="option in serviceOptions" :key="option.value" :value="option.value">
               {{ option.label }}
             </option>
           </select>

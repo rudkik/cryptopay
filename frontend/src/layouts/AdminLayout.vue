@@ -12,7 +12,7 @@ import {
   LogOut,
   Menu,
   Network,
-  Store,
+  Plug,
   Users,
   Wallet,
   Webhook,
@@ -21,6 +21,7 @@ import {
 import AppLogo from '@/components/AppLogo.vue'
 import WatcherHealthMenu from '@/components/WatcherHealthMenu.vue'
 import { useAuthStore } from '@/stores/auth'
+import type { AppFeatures } from '@/api/types'
 import { useNetworksStore } from '@/stores/networks'
 
 const route = useRoute()
@@ -38,6 +39,8 @@ interface NavItem {
   icon: typeof LayoutDashboard
   exact?: boolean
   adminOnly?: boolean
+  /** Hidden unless the server reports this optional module as enabled (SPEC §8). */
+  feature?: keyof AppFeatures
 }
 
 const NAV: { group: string; items: NavItem[] }[] = [
@@ -51,14 +54,15 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { label: 'Invoices', to: '/admin/invoices', icon: FileText },
       { label: 'Transactions', to: '/admin/transactions', icon: ArrowLeftRight },
       { label: 'Webhooks', to: '/admin/webhooks', icon: Webhook },
+      // "Services" is the admin name for what the API calls merchants.
+      { label: 'Services', to: '/admin/services', icon: Plug },
     ],
   },
   {
-    group: 'Catalog',
-    items: [
-      { label: 'Merchants', to: '/admin/merchants', icon: Store },
-      { label: 'Tokens', to: '/admin/tokens', icon: Coins },
-    ],
+    // Disappears entirely when TOKEN_SALE_ENABLED is off — the whole group is
+    // dropped below once its only item is filtered out.
+    group: 'Token sale',
+    items: [{ label: 'Tokens', to: '/admin/tokens', icon: Coins, feature: 'token_sale' }],
   },
   {
     group: 'System',
@@ -75,7 +79,10 @@ const NAV: { group: string; items: NavItem[] }[] = [
 const navigation = computed(() =>
   NAV.map((section) => ({
     ...section,
-    items: section.items.filter((item) => !item.adminOnly || auth.isAdmin),
+    items: section.items.filter(
+      (item) =>
+        (!item.adminOnly || auth.isAdmin) && (!item.feature || auth.features[item.feature]),
+    ),
   })).filter((section) => section.items.length > 0),
 )
 

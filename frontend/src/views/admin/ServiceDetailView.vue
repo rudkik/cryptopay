@@ -17,6 +17,7 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import TabNav from '@/components/TabNav.vue'
 import type { TabItem } from '@/components/tabs'
 import type { Column } from '@/components/table'
+// "Service" is the admin-side name; the API still calls it a merchant (SPEC §6.4).
 import { merchantsApi } from '@/api/merchants'
 import { invoicesApi } from '@/api/invoices'
 import { isApiError } from '@/api/http'
@@ -28,7 +29,7 @@ import { toast } from '@/utils/toast'
 const props = defineProps<{ id: string }>()
 const router = useRouter()
 
-const merchant = ref<Merchant | null>(null)
+const service = ref<Merchant | null>(null)
 const loading = ref(true)
 const notFound = ref(false)
 const activeTab = ref('overview')
@@ -39,8 +40,8 @@ const tabs = computed<TabItem[]>(() => [
   { key: 'invoices', label: 'Invoices', count: invoicesMeta.value.total },
 ])
 
-const balances = computed(() => merchant.value?.balances ?? [])
-const apiKeys = computed(() => merchant.value?.api_keys ?? [])
+const balances = computed(() => service.value?.balances ?? [])
+const apiKeys = computed(() => service.value?.api_keys ?? [])
 const activeKeys = computed(() => apiKeys.value.filter((key) => !key.revoked_at))
 
 /* ---------------------------------------------------------------- settings */
@@ -56,7 +57,7 @@ function syncForm(source: Merchant): void {
 }
 
 const settingsDirty = computed(() => {
-  const source = merchant.value
+  const source = service.value
   if (!source) return false
   return (
     settingsForm.name !== source.name ||
@@ -70,17 +71,17 @@ async function saveSettings(): Promise<void> {
   savingSettings.value = true
   settingsErrors.value = {}
   try {
-    merchant.value = await merchantsApi.update(props.id, {
+    service.value = await merchantsApi.update(props.id, {
       name: settingsForm.name.trim(),
       email: settingsForm.email.trim() || null,
       webhook_url: settingsForm.webhook_url.trim() || null,
       is_active: settingsForm.is_active,
     })
-    if (merchant.value) syncForm(merchant.value)
-    toast.success('Merchant updated')
+    if (service.value) syncForm(service.value)
+    toast.success('Service updated')
   } catch (error) {
     settingsErrors.value = fieldErrors(error)
-    reportError(error, 'Could not save the merchant')
+    reportError(error, 'Could not save the service')
   } finally {
     savingSettings.value = false
   }
@@ -132,7 +133,7 @@ async function createKey(): Promise<void> {
     revealedKey.value = response.key
     keyModalOpen.value = false
     keyName.value = ''
-    await loadMerchant(true)
+    await loadService(true)
   } catch (error) {
     keyErrors.value = fieldErrors(error)
     reportError(error, 'Could not create the API key')
@@ -148,7 +149,7 @@ async function revokeKey(): Promise<void> {
     await merchantsApi.revokeApiKey(props.id, revokeTarget.value.id)
     toast.success('API key revoked')
     revokeTarget.value = null
-    await loadMerchant(true)
+    await loadService(true)
   } catch (error) {
     reportError(error, 'Could not revoke the API key')
   } finally {
@@ -176,22 +177,22 @@ async function loadInvoices(page = 1): Promise<void> {
     invoices.value = response.data ?? []
     invoicesMeta.value = response.meta ?? invoicesMeta.value
   } catch (error) {
-    reportError(error, 'Could not load the merchant invoices')
+    reportError(error, 'Could not load the service invoices')
   } finally {
     invoicesLoading.value = false
   }
 }
 
 /* ------------------------------------------------------------------- load */
-async function loadMerchant(silent = false): Promise<void> {
+async function loadService(silent = false): Promise<void> {
   if (!silent) loading.value = true
   try {
-    merchant.value = await merchantsApi.get(props.id)
-    syncForm(merchant.value)
+    service.value = await merchantsApi.get(props.id)
+    syncForm(service.value)
     notFound.value = false
   } catch (error) {
     if (isApiError(error) && error.status === 404) notFound.value = true
-    else reportError(error, 'Failed to load the merchant')
+    else reportError(error, 'Failed to load the service')
   } finally {
     loading.value = false
   }
@@ -202,26 +203,26 @@ watch(activeTab, (tab) => {
 })
 
 onMounted(async () => {
-  await loadMerchant()
+  await loadService()
   void loadInvoices()
 })
 </script>
 
 <template>
   <div class="space-y-6">
-    <PageHeader :title="merchant?.name ?? 'Merchant'">
+    <PageHeader :title="service?.name ?? 'Service'">
       <template #breadcrumb>
         <RouterLink
-          to="/admin/merchants"
+          to="/admin/services"
           class="inline-flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-text"
         >
           <ArrowLeft :size="13" aria-hidden="true" />
-          Merchants
+          Services
         </RouterLink>
       </template>
       <template #actions>
-        <StatusBadge v-if="merchant" :status="merchant.is_active ? 'active' : 'inactive'" />
-        <button type="button" class="btn-secondary btn-sm" @click="loadMerchant(true)">
+        <StatusBadge v-if="service" :status="service.is_active ? 'active' : 'inactive'" />
+        <button type="button" class="btn-secondary btn-sm" @click="loadService(true)">
           <RefreshCw :size="14" aria-hidden="true" />
           Refresh
         </button>
@@ -234,11 +235,11 @@ onMounted(async () => {
     </div>
 
     <EmptyState
-      v-else-if="notFound || !merchant"
-      title="Merchant not found"
-      description="This merchant does not exist or was removed."
+      v-else-if="notFound || !service"
+      title="Service not found"
+      description="This service does not exist or was removed."
     >
-      <RouterLink to="/admin/merchants" class="btn-secondary">Back to merchants</RouterLink>
+      <RouterLink to="/admin/services" class="btn-secondary">Back to services</RouterLink>
     </EmptyState>
 
     <template v-else>
@@ -333,7 +334,7 @@ onMounted(async () => {
                 placeholder="https://example.com/webhooks/cryptopay"
               />
               <p v-if="settingsErrors.webhook_url" class="error-text">{{ settingsErrors.webhook_url }}</p>
-              <p v-else class="hint">Events are signed with the merchant webhook secret.</p>
+              <p v-else class="hint">Events are signed with the service webhook secret.</p>
             </div>
             <label class="flex cursor-pointer items-center gap-2.5">
               <input
@@ -359,17 +360,17 @@ onMounted(async () => {
 
           <dl class="mt-5 grid grid-cols-2 gap-3 border-t border-border pt-4 text-xs">
             <div class="min-w-0">
-              <dt class="text-muted">Merchant ID</dt>
-              <dd class="mono mt-0.5 truncate">{{ merchant.id }}</dd>
+              <dt class="text-muted">Service ID</dt>
+              <dd class="mono mt-0.5 truncate">{{ service.id }}</dd>
             </div>
             <div class="min-w-0 text-right">
               <dt class="text-muted">Created</dt>
-              <dd class="mt-0.5">{{ formatDate(merchant.created_at) }}</dd>
+              <dd class="mt-0.5">{{ formatDate(service.created_at) }}</dd>
             </div>
-            <div v-if="merchant.settings?.underpayment_tolerance !== undefined" class="min-w-0">
+            <div v-if="service.settings?.underpayment_tolerance !== undefined" class="min-w-0">
               <dt class="text-muted">Underpayment tolerance</dt>
               <dd class="mono mt-0.5">
-                {{ formatAmount(String(merchant.settings.underpayment_tolerance)) }}%
+                {{ formatAmount(String(service.settings.underpayment_tolerance)) }}%
               </dd>
             </div>
           </dl>
@@ -386,7 +387,7 @@ onMounted(async () => {
       >
         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
           <div>
-            <h2 class="text-sm font-semibold">API keys</h2>
+            <h2 class="text-sm font-semibold">Service API keys</h2>
             <p class="mt-0.5 text-xs text-muted">
               Keys are shown once at creation and stored as a SHA-256 hash.
             </p>
@@ -431,7 +432,7 @@ onMounted(async () => {
             <EmptyState
               :icon="KeyRound"
               title="No API keys"
-              description="Create a key so this merchant can call the v1 API."
+              description="Create a key so this service can call the v1 API."
               compact
             >
               <button type="button" class="btn-primary btn-sm" @click="keyModalOpen = true">
@@ -459,7 +460,7 @@ onMounted(async () => {
           :rows="invoices"
           :loading="invoicesLoading"
           clickable
-          caption="Merchant invoices"
+          caption="Service invoices"
           @row-click="(row) => router.push({ name: 'invoice-detail', params: { id: row.id } })"
         >
           <template #cell-id="{ row }">
@@ -482,7 +483,7 @@ onMounted(async () => {
             <span class="whitespace-nowrap text-xs text-muted">{{ formatDateTime(row.created_at) }}</span>
           </template>
           <template #empty>
-            <EmptyState title="No invoices" description="This merchant has not created any invoice yet." compact />
+            <EmptyState title="No invoices" description="This service has not created any invoice yet." compact />
           </template>
         </DataTable>
         <Pagination :meta="invoicesMeta" :disabled="invoicesLoading" @change="loadInvoices" />

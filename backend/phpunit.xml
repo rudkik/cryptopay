@@ -36,6 +36,10 @@
         <env name="INTERNAL_API_TOKEN" value="test-internal-token"/>
         <env name="WATCHER_URL" value="http://watcher.test:3100"/>
         <env name="SIMULATION_ENABLED" value="true"/>
+        <!-- Optional module, shipped off. A case that needs it says so with
+             config()->set('features.token_sale', true) rather than relying on
+             whatever the developer happens to have in .env. -->
+        <env name="TOKEN_SALE_ENABLED" value="false"/>
         <env name="ADMIN_EMAIL" value="admin@cryptopay.local"/>
         <env name="ADMIN_PASSWORD" value="password"/>
     </php>

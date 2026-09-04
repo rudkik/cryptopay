@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RotateCw, Webhook } from 'lucide-vue-next'
 import DataTable from '@/components/DataTable.vue'
 import Drawer from '@/components/Drawer.vue'
@@ -14,11 +14,14 @@ import type { Column } from '@/components/table'
 import { webhooksApi } from '@/api/webhooks'
 import { merchantsApi } from '@/api/merchants'
 import type { WebhookDelivery } from '@/api/types'
+import { useAuthStore } from '@/stores/auth'
 import { usePaginatedList } from '@/composables/usePaginatedList'
 import { reportError } from '@/composables/useErrorHandler'
 import { formatDateTime, formatRelative, truncateMiddle } from '@/utils/format'
 import { toast } from '@/utils/toast'
 import { WEBHOOK_STATUS_OPTIONS, type Option } from '@/utils/options'
+
+const auth = useAuthStore()
 
 const { filters, items, meta, loading, hasFilters, load, setPage, resetFilters } = usePaginatedList<
   WebhookDelivery,
@@ -29,23 +32,27 @@ const { filters, items, meta, loading, hasFilters, load, setPage, resetFilters }
   perPage: 25,
 })
 
-const merchantOptions = ref<Option[]>([])
+const serviceOptions = ref<Option[]>([])
 const selected = ref<WebhookDelivery | null>(null)
 const retrying = ref<string | null>(null)
 
-const EVENT_OPTIONS: Option[] = [
+// `token_purchase.completed` only ever fires while the optional token sale
+// module is enabled (SPEC §8), so the filter drops it when it is off.
+const EVENT_OPTIONS = computed<Option[]>(() => [
   { value: 'invoice.confirming', label: 'invoice.confirming' },
   { value: 'invoice.paid', label: 'invoice.paid' },
   { value: 'invoice.overpaid', label: 'invoice.overpaid' },
   { value: 'invoice.partially_paid', label: 'invoice.partially_paid' },
   { value: 'invoice.expired', label: 'invoice.expired' },
   { value: 'invoice.cancelled', label: 'invoice.cancelled' },
-  { value: 'token_purchase.completed', label: 'token_purchase.completed' },
-]
+  ...(auth.tokenSaleEnabled
+    ? [{ value: 'token_purchase.completed', label: 'token_purchase.completed' }]
+    : []),
+])
 
 const columns: Column[] = [
   { key: 'event', label: 'Event' },
-  { key: 'merchant', label: 'Merchant', hideBelow: 'lg' },
+  { key: 'merchant', label: 'Service', hideBelow: 'lg' },
   { key: 'status', label: 'Status' },
   { key: 'attempts', label: 'Attempts', class: 'text-right', hideBelow: 'sm' },
   { key: 'response_code', label: 'Response', class: 'text-right', hideBelow: 'sm' },
@@ -66,18 +73,18 @@ async function retry(delivery: WebhookDelivery): Promise<void> {
   }
 }
 
-async function loadMerchants(): Promise<void> {
+async function loadServices(): Promise<void> {
   try {
     const response = await merchantsApi.list({ per_page: 100 })
-    merchantOptions.value = (response.data ?? []).map((m) => ({ value: m.id, label: m.name }))
+    serviceOptions.value = (response.data ?? []).map((m) => ({ value: m.id, label: m.name }))
   } catch {
-    merchantOptions.value = []
+    serviceOptions.value = []
   }
 }
 
 onMounted(() => {
   void load()
-  void loadMerchants()
+  void loadServices()
 })
 </script>
 
@@ -93,10 +100,11 @@ onMounted(() => {
         <SelectFilter v-model="filters.status" label="Status" :options="WEBHOOK_STATUS_OPTIONS" />
         <SelectFilter v-model="filters.event" label="Event" :options="EVENT_OPTIONS" />
         <SelectFilter
-          v-if="merchantOptions.length"
+          v-if="serviceOptions.length"
           v-model="filters.merchant_id"
-          label="Merchant"
-          :options="merchantOptions"
+          label="Service"
+          placeholder="All services"
+          :options="serviceOptions"
         />
       </FilterBar>
 
@@ -162,7 +170,7 @@ onMounted(() => {
             :description="
               hasFilters
                 ? 'No delivery matches the current filters.'
-                : 'Events are queued once a merchant has a webhook URL configured.'
+                : 'Events are queued once a service has a webhook URL configured.'
             "
           >
             <button v-if="hasFilters" type="button" class="btn-secondary" @click="resetFilters">

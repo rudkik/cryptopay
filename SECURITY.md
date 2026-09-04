@@ -145,6 +145,9 @@
       через `EVM_XPUB` / `TRON_XPUB` в `.env`. На странице Wallet ни одна сеть не должна быть «Not configured».
 - [ ] Первые адреса, выданные после смены xpub, сверены с собственным кошельком (кнопка «Preview addresses»).
 - [ ] `APP_ENV=production`, `APP_DEBUG=false`, `SIMULATION_ENABLED=false`.
+- [ ] `TOKEN_SALE_ENABLED=false`, если продажа токенов не используется: модуль по умолчанию выключен, и весь его
+      API (`/api/v1/tokens*`, `/api/v1/token-purchases*`, `/api/v1/customers/{id}/holdings`, `/api/admin/tokens*`,
+      `/api/admin/token-purchases*`) отдаёт `404` — меньше открытой поверхности.
 - [ ] Свои значения `APP_KEY`, `INTERNAL_API_TOKEN` (≥ 32 случайных байт), `DB_PASSWORD`, `REDIS_PASSWORD`, `ADMIN_PASSWORD`.
 - [ ] `WEBHOOK_ALLOW_PRIVATE=false` (вебхуки только на публичные https-адреса ваших проектов).
 - [ ] HTTPS перед nginx (reverse proxy/ingress с TLS), `APP_URL` = внешний https-адрес.

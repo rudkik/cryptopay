@@ -5,12 +5,23 @@ import CodeBlock from '@/components/CodeBlock.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { API_DOCS } from '@/content/apiDocs'
 import type { DocBlock } from '@/content/docsTypes'
+import { useAuthStore } from '@/stores/auth'
+
+const auth = useAuthStore()
+
+/** Sections behind a disabled module are dropped entirely (SPEC §8). */
+const docs = computed(() =>
+  API_DOCS.map((group) => ({
+    ...group,
+    sections: group.sections.filter((section) => !section.feature || auth.features[section.feature]),
+  })).filter((group) => group.sections.length > 0),
+)
 
 const activeId = ref<string>(API_DOCS[0]?.sections[0]?.id ?? '')
 const tocOpen = ref(false)
 let observer: IntersectionObserver | null = null
 
-const allSections = computed(() => API_DOCS.flatMap((group) => group.sections))
+const allSections = computed(() => docs.value.flatMap((group) => group.sections))
 
 const METHOD_TONES: Record<string, string> = {
   GET: 'border-success/25 bg-success-soft text-success',
@@ -91,7 +102,7 @@ onBeforeUnmount(() => observer?.disconnect())
             On this page
           </p>
           <ul class="space-y-4">
-            <li v-for="group in API_DOCS" :key="group.id">
+            <li v-for="group in docs" :key="group.id">
               <p class="px-2 pb-1 text-xs font-semibold text-text">{{ group.title }}</p>
               <ul class="space-y-0.5 border-l border-border pl-0">
                 <li v-for="section in group.sections" :key="section.id">
@@ -117,7 +128,7 @@ onBeforeUnmount(() => observer?.disconnect())
 
       <!-- Content -->
       <div class="min-w-0 flex-1 space-y-10">
-        <section v-for="group in API_DOCS" :key="group.id" class="space-y-8">
+        <section v-for="group in docs" :key="group.id" class="space-y-8">
           <h2 class="text-xs font-semibold uppercase tracking-[0.14em] text-primary-hover">
             {{ group.title }}
           </h2>

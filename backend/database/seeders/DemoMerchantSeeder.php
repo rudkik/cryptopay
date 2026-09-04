@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\Merchant;
 use App\Models\Token;
 use App\Services\ApiKeyService;
+use App\Support\FeatureFlags;
 use Illuminate\Database\Seeder;
 
 /**
@@ -15,6 +16,10 @@ use Illuminate\Database\Seeder;
  * other environment a random key is generated instead.
  *
  * Idempotent: rows are matched by name/symbol and only created when missing.
+ *
+ * The demo Token belongs to the optional token-sale module, so it is only
+ * seeded while TOKEN_SALE_ENABLED is on. Turning the flag off never deletes an
+ * already-seeded row — the flag hides the module, it does not own the data.
  */
 class DemoMerchantSeeder extends Seeder
 {
@@ -54,20 +59,22 @@ class DemoMerchantSeeder extends Seeder
             }
         }
 
-        Token::query()->firstOrCreate(
-            ['merchant_id' => $merchant->id, 'symbol' => 'DEMO'],
-            [
-                'name' => 'Demo Token',
-                'description' => 'A sample token sale product for trying out the token purchase flow.',
-                'price_usd' => '0.25',
-                'decimals' => 18,
-                'total_supply' => '1000000',
-                'sold' => '0',
-                'min_purchase' => '1',
-                'max_purchase' => '100000',
-                'is_active' => true,
-            ],
-        );
+        if (FeatureFlags::enabled('token_sale')) {
+            Token::query()->firstOrCreate(
+                ['merchant_id' => $merchant->id, 'symbol' => 'DEMO'],
+                [
+                    'name' => 'Demo Token',
+                    'description' => 'A sample token sale product for trying out the token purchase flow.',
+                    'price_usd' => '0.25',
+                    'decimals' => 18,
+                    'total_supply' => '1000000',
+                    'sold' => '0',
+                    'min_purchase' => '1',
+                    'max_purchase' => '100000',
+                    'is_active' => true,
+                ],
+            );
+        }
     }
 
     /**

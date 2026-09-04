@@ -229,6 +229,13 @@ app.post(
 
 ## Token sale / пополнение по `customer_id`
 
+> **Модуль token sale опционален.** Методы этого раздела (`tokens()`, `getToken()`,
+> `createTokenPurchase()`, `listTokenPurchases()`, `getTokenPurchase()`,
+> `customerHoldings()`) работают, только если на сервере включён
+> `TOKEN_SALE_ENABLED=true`. Иначе сервер отвечает `404 not_found` с сообщением
+> «Token sale module is disabled». Текущее значение флага доступно без авторизации:
+> `GET /api/public/config` → `features.token_sale`.
+
 Продажа собственного токена мерчанта за USDT/USDC — покупатель идентифицируется вашим
 внутренним `customer_id` (а не email), балансы токенов ведутся именно по нему:
 

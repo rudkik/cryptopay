@@ -443,7 +443,29 @@ export interface ApiErrorEnvelope {
   error: ApiErrorPayload
 }
 
+/**
+ * Optional modules the server can switch off (SPEC §6.4, §8).
+ * Returned by the login response, `GET /api/admin/auth/me` and
+ * `GET /api/public/config`; the admin UI hides the matching screens.
+ */
+export interface AppFeatures {
+  token_sale: boolean
+}
+
 export interface LoginResponse {
   token: string
   user: AdminUser
+  features?: AppFeatures
+}
+
+/** SPEC §6.4 `GET /api/admin/auth/me`. */
+export interface MeResponse {
+  user: AdminUser
+  features?: AppFeatures
+}
+
+/** SPEC §6.3 `GET /api/public/config` — unauthenticated. */
+export interface PublicConfig {
+  features: AppFeatures
+  networks: NetworkCode[]
 }

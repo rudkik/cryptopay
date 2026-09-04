@@ -5,8 +5,8 @@ import {
   ArrowUpRight,
   CheckCircle2,
   FileText,
+  Plug,
   RefreshCw,
-  Store,
   TrendingUp,
   Webhook,
 } from 'lucide-vue-next'
@@ -69,7 +69,7 @@ async function loadWalletSources(): Promise<void> {
 
 const columns: Column[] = [
   { key: 'id', label: 'Invoice' },
-  { key: 'merchant', label: 'Merchant', hideBelow: 'md' },
+  { key: 'merchant', label: 'Service', hideBelow: 'md' },
   { key: 'amount', label: 'Amount', class: 'text-right' },
   { key: 'network', label: 'Network', hideBelow: 'sm' },
   { key: 'status', label: 'Status' },
@@ -124,7 +124,7 @@ onMounted(() => {
         </div>
       </StatTile>
 
-      <StatTile label="Active merchants" :icon="Store" :loading="loading">
+      <StatTile label="Active services" :icon="Plug" :loading="loading">
         <p class="text-2xl font-semibold tabular-nums">{{ formatCount(stats?.merchants_active) }}</p>
       </StatTile>
 

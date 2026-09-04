@@ -21,6 +21,11 @@ export const API_DOCS: DocGroup[] = [
           {
             kind: 'text',
             value:
+              'A Service (called `merchant` in the API) is one of your connected projects: it owns its API keys, its webhook URL and its balances. The admin panel says "Service"; every request, field and webhook payload keeps the `merchant` wording.',
+          },
+          {
+            kind: 'text',
+            value:
               'Every amount in the API is a decimal string in human-readable units (for example `"100.5"`), never a float. Parse them with a decimal library (bcmath, BigNumber, Decimal) to avoid rounding errors.',
           },
           {
@@ -446,6 +451,9 @@ invoice = res.json()`,
       {
         id: 'token-sale',
         title: 'Token sale',
+        // Optional module: hidden here and 404 on the API when the server runs
+        // with TOKEN_SALE_ENABLED=false (SPEC §6.4, §8).
+        feature: 'token_sale',
         blocks: [
           { kind: 'endpoint', method: 'GET', path: '/api/v1/tokens', summary: 'Your active token products' },
           { kind: 'endpoint', method: 'POST', path: '/api/v1/token-purchases', summary: 'Start a purchase' },

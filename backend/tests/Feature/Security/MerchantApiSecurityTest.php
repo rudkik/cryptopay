@@ -26,6 +26,10 @@ class MerchantApiSecurityTest extends TestCase
         $this->seedNetworks();
         $this->fakeWatcher();
 
+        // Token sale is an optional module and ships off (config/features.php);
+        // these cases exercise it, so they turn it on explicitly.
+        config()->set('features.token_sale', true);
+
         [$this->merchant, $this->key] = $this->makeMerchant();
     }
 

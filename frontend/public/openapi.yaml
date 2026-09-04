@@ -70,10 +70,14 @@ security:
 tags:
   - name: Invoices
     description: Счета на оплату — создание, просмотр, выбор сети, отмена.
-  - name: Token purchases
-    description: Продажа токенов (token sale) за USDT/USDC.
-  - name: Tokens
-    description: Каталог токенов мерчанта и балансы держателей.
+  - name: Token sale (optional)
+    description: >-
+      Опциональный модуль: продажа токенов за USDT/USDC — каталог токенов,
+      покупки и балансы держателей. Включается на стороне сервера флагом
+      `TOKEN_SALE_ENABLED=true`; пока он выключен, все перечисленные здесь
+      маршруты отвечают `404 not_found` с сообщением
+      «Token sale module is disabled». Текущее значение флага отдаёт
+      `GET /api/public/config` в поле `features.token_sale`.
   - name: Networks
     description: Включённые сети и адреса контрактов.
   - name: Balances
@@ -321,10 +325,12 @@ paths:
 
   /api/v1/tokens:
     get:
-      tags: [Tokens]
+      tags: [Token sale (optional)]
       operationId: listTokens
       summary: Токены мерчанта
-      description: Только активные (`is_active = true`), по алфавиту названия.
+      description: >-
+        Только активные (`is_active = true`), по алфавиту названия.
+        Доступно только при `TOKEN_SALE_ENABLED=true`.
       responses:
         '200':
           description: Список токенов.
@@ -342,9 +348,10 @@ paths:
 
   /api/v1/tokens/{id}:
     get:
-      tags: [Tokens]
+      tags: [Token sale (optional)]
       operationId: getToken
       summary: Токен по id
+      description: Доступно только при `TOKEN_SALE_ENABLED=true`.
       parameters:
         - name: id
           in: path
@@ -366,9 +373,10 @@ paths:
 
   /api/v1/token-purchases:
     get:
-      tags: [Token purchases]
+      tags: [Token sale (optional)]
       operationId: listTokenPurchases
       summary: Список покупок токена
+      description: Доступно только при `TOKEN_SALE_ENABLED=true`.
       parameters:
         - name: customer_id
           in: query
@@ -399,7 +407,7 @@ paths:
         '422': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
     post:
-      tags: [Token purchases]
+      tags: [Token sale (optional)]
       operationId: createTokenPurchase
       summary: Создать покупку токена
       description: |
@@ -407,6 +415,8 @@ paths:
         посчитано по `price_usd`, зафиксированной на момент создания
         (USDT и USDC считаются равными 1 USD). Как и у счёта, `currency` и
         `network` необязательны парой: без них сеть выберет плательщик.
+
+        Доступно только при `TOKEN_SALE_ENABLED=true`.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -452,9 +462,10 @@ paths:
 
   /api/v1/token-purchases/{id}:
     get:
-      tags: [Token purchases]
+      tags: [Token sale (optional)]
       operationId: getTokenPurchase
       summary: Покупка по id
+      description: Доступно только при `TOKEN_SALE_ENABLED=true`.
       parameters:
         - name: id
           in: path
@@ -476,9 +487,10 @@ paths:
 
   /api/v1/customers/{customer_id}/holdings:
     get:
-      tags: [Tokens]
+      tags: [Token sale (optional)]
       operationId: listCustomerHoldings
       summary: Балансы токенов покупателя
+      description: Доступно только при `TOKEN_SALE_ENABLED=true`.
       parameters:
         - name: customer_id
           in: path
@@ -519,6 +531,46 @@ paths:
                 properties:
                   data: { $ref: '#/components/schemas/Merchant' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/public/config:
+    get:
+      tags: [Public]
+      operationId: getPublicConfig
+      summary: Конфигурация развёртывания
+      description: >-
+        То, что клиенту нужно до всякой авторизации: какие опциональные модули
+        включены на этом сервере и какие сети он принимает. Без авторизации,
+        внутри префикса `/api/public/*`, поэтому делит его лимит 120 req/min
+        на IP.
+      security: []
+      responses:
+        '200':
+          description: Флаги модулей и коды включённых сетей.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [features, networks]
+                properties:
+                  features:
+                    type: object
+                    required: [token_sale]
+                    properties:
+                      token_sale:
+                        type: boolean
+                        description: >-
+                          Включён ли модуль token sale (`TOKEN_SALE_ENABLED`).
+                          При `false` маршруты токенов отвечают `404`.
+                  networks:
+                    type: array
+                    description: >-
+                      Коды включённых сетей (`is_enabled = true`) в порядке
+                      ethereum, bsc, tron.
+                    items: { $ref: '#/components/schemas/NetworkCode' }
+              example:
+                features: { token_sale: false }
+                networks: [ethereum, bsc, tron]
         '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/public/invoices/{id}:
@@ -711,12 +763,14 @@ webhooks:
 
   token_purchase.completed:
     post:
-      tags: [Token purchases]
+      tags: [Token sale (optional)]
       operationId: webhookTokenPurchaseCompleted
       summary: Покупка токена оплачена и зачислена
       description: |
         `data.token_purchase` заполнен, токены начислены в
         `GET /api/v1/customers/{customer_id}/holdings`.
+
+        Доступно только при `TOKEN_SALE_ENABLED=true`.
       security: []
       parameters:
         - $ref: '#/components/parameters/WebhookEventHeader'
