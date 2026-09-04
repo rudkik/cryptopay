@@ -335,6 +335,43 @@ final class WebhookTest extends TestCase
         Webhook::verify((string) $reEncoded, $delivery['headers'], self::SECRET);
     }
 
+    /**
+     * SPEC §6.2: a reorg can undo a payment the merchant was already told
+     * about. `isReversed()` plus `reversal()` is what the handler branches on
+     * to revoke whatever it credited for that invoice.
+     */
+    public function test_reversed_delivery_exposes_the_reversal_block(): void
+    {
+        $payload = $this->payload();
+        $payload['event'] = 'invoice.reversed';
+        $payload['data']['invoice']['status'] = 'pending';
+        $payload['data']['invoice']['is_paid'] = false;
+        $payload['data']['invoice']['paid_at'] = null;
+        $payload['data']['reversal'] = [
+            'transaction_id' => '01a06089-c3c9-7394-9750-480c130315fd',
+            'tx_hash' => '0xdeadbeef',
+            'amount' => '12.500000',
+            'reason' => 'orphaned',
+        ];
+
+        $event = WebhookEvent::fromArray($payload);
+
+        $this->assertTrue($event->isReversed());
+        $this->assertFalse($event->isPaid());
+        $this->assertTrue($event->isInvoiceEvent());
+        $this->assertSame('orphaned', $event->reversal()['reason']);
+        $this->assertSame('12.500000', $event->reversal()['amount']);
+        $this->assertSame('pending', $event->invoice?->status);
+    }
+
+    public function test_a_paid_delivery_has_no_reversal_block(): void
+    {
+        $event = WebhookEvent::fromArray($this->payload());
+
+        $this->assertFalse($event->isReversed());
+        $this->assertNull($event->reversal());
+    }
+
     public function test_exception_never_contains_the_secret(): void
     {
         $delivery = $this->signedDelivery('a-different-secret');

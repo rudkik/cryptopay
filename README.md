@@ -110,6 +110,8 @@ curl -X POST http://localhost:8095/api/v1/invoices \
 3. Перенаправьте покупателя на `payment_url` из ответа (hosted checkout с QR и таймером) или покажите `address` у себя.
 4. Получите вебхук `invoice.paid` (подпись `X-CryptoPay-Signature: sha256=HMAC_SHA256(secret, timestamp + "." + body)`)
    или опросите `GET /api/v1/invoices/{id}`.
+5. Обработайте `invoice.reversed`: реорг может забрать уже подтверждённый платёж, и тогда счёт перестаёт быть
+   оплаченным — по этому событию нужно отозвать всё, что вы выдали по счёту (SPEC §6.2).
 
 Покупка токенов (опциональный модуль, по умолчанию выключен — включается `TOKEN_SALE_ENABLED=true`):
 `POST /api/v1/token-purchases` создаёт счёт, после оплаты токены зачисляются на `customer_id`
@@ -131,6 +133,7 @@ return redirect($invoice->paymentUrl);
 // приём вебхука
 $event = \CryptoPay\Sdk\Webhook::verify($rawBody, $headers, $webhookSecret);
 if ($event->isPaid()) { /* зачислить $event->invoice->amountConfirmed пользователю $event->invoice->customerId */ }
+if ($event->isReversed()) { /* реорг забрал платёж — отозвать выданное по $event->invoice->id */ }
 ```
 
 Подробные примеры и Laravel-интеграция: `sdk/php/README.md`, `sdk/js/README.md`, страница `/docs` → SDKs.

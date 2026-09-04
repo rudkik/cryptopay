@@ -51,6 +51,24 @@ class ErrorLeakTest extends TestCase
         $this->assertSame('Server error.', $response->json('error.message'));
     }
 
+    /**
+     * A wrong verb is its own mistake and used to be reported as `not_found`,
+     * which sent integrators looking for a missing resource instead of a typo
+     * in their HTTP method. `Allow` says what the URI does accept.
+     */
+    public function test_an_unsupported_method_returns_method_not_allowed(): void
+    {
+        $response = $this->json('DELETE', '/api/v1/networks')
+            ->assertStatus(405)
+            ->assertJsonStructure(['error' => ['code', 'message', 'details']])
+            ->assertJsonPath('error.code', 'method_not_allowed');
+
+        $allow = $response->headers->get('Allow');
+
+        $this->assertNotNull($allow, 'A 405 must carry an Allow header.');
+        $this->assertStringContainsString('GET', $allow);
+    }
+
     public function test_every_error_uses_the_spec_envelope(): void
     {
         foreach ([

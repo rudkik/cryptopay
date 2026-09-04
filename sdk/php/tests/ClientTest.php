@@ -381,6 +381,27 @@ final class ClientTest extends TestCase
         }
     }
 
+    public function test_method_not_allowed_is_its_own_code(): void
+    {
+        $transport = new FakeTransport();
+        $transport->queue($this->jsonResponse(405, [
+            'error' => [
+                'code' => 'method_not_allowed',
+                'message' => 'The requested method is not supported for this route.',
+                'details' => [],
+            ],
+        ]));
+
+        try {
+            $this->client($transport)->getInvoice('any-id');
+            self::fail('Expected ApiException to be thrown.');
+        } catch (ApiException $e) {
+            self::assertTrue($e->isMethodNotAllowed());
+            self::assertFalse($e->isNotFound());
+            self::assertSame(405, $e->getHttpStatus());
+        }
+    }
+
     // 7. non-JSON 500 body => code server_error, raw body in details.
     public function test_non_json_server_error_falls_back_to_server_error_code(): void
     {

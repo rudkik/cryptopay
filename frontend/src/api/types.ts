@@ -323,6 +323,7 @@ export type WebhookEvent =
   | 'invoice.partially_paid'
   | 'invoice.expired'
   | 'invoice.cancelled'
+  | 'invoice.reversed'
   | 'token_purchase.completed'
 
 export interface WebhookDelivery {

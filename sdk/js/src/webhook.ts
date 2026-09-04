@@ -141,6 +141,7 @@ export function verifyWebhook(
   const deliveryId = deliveryHeader ?? payload.id
   const invoice = payload.data?.invoice ?? null
   const tokenPurchase = payload.data?.token_purchase ?? null
+  const reversal = payload.data?.reversal ?? null
 
   return {
     id: payload.id,
@@ -149,8 +150,10 @@ export function verifyWebhook(
     deliveryId,
     invoice,
     tokenPurchase,
+    reversal,
     payload,
     isPaid: payload.event === 'invoice.paid' || payload.event === 'invoice.overpaid',
+    isReversed: payload.event === 'invoice.reversed',
   }
 }
 

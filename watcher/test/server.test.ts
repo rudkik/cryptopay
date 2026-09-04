@@ -33,6 +33,7 @@ function baseConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     logLevel: 'silent',
     evmBatchBlocks: 20,
     pollIntervalMs: 5000,
+    pollIntervalFor: () => 5000,
     configRefreshMs: 60_000,
     addressRefreshMs: 10_000,
     heartbeatMs: 15_000,

@@ -62,12 +62,15 @@ class TransactionIngestService
             return ['ok' => true, 'transaction_id' => null, 'invoice_id' => null, 'ignored' => true];
         }
 
-        [$transaction, $shouldRecalculate] = $this->persistIdempotently($payload, $depositAddress);
+        [$transaction, $shouldRecalculate, $reversal] = $this->persistIdempotently($payload, $depositAddress);
 
         $invoice = $transaction->invoice_id ? Invoice::find($transaction->invoice_id) : null;
 
         if ($invoice && $shouldRecalculate) {
-            $this->invoices->recalculate($invoice);
+            // `$reversal` is non-null only when this payload took settled money
+            // back off the invoice; it is what turns the recalculation into an
+            // `invoice.reversed` webhook (SPEC §6.2).
+            $this->invoices->recalculate($invoice, reversal: $reversal);
         }
 
         return [
@@ -91,7 +94,7 @@ class TransactionIngestService
      * takes the normal update path.
      *
      * @param  array<string, mixed>  $payload
-     * @return array{0: Transaction, 1: bool}
+     * @return array{0: Transaction, 1: bool, 2: ?array<string, string>}
      */
     private function persistIdempotently(array $payload, DepositAddress $depositAddress): array
     {
@@ -113,7 +116,7 @@ class TransactionIngestService
 
     /**
      * @param  array<string, mixed>  $payload
-     * @return array{0: Transaction, 1: bool}
+     * @return array{0: Transaction, 1: bool, 2: ?array<string, string>}
      */
     private function persist(array $payload, DepositAddress $depositAddress): array
     {
@@ -190,7 +193,7 @@ class TransactionIngestService
                 // override `confirmed`.
                 $transaction->forceFill(['confirmations' => $attributes['confirmations']])->save();
 
-                return [$transaction, false];
+                return [$transaction, false, null];
             }
 
             $transaction->forceFill($attributes)->save();
@@ -200,16 +203,34 @@ class TransactionIngestService
         }
 
         $statusChanged = $previousStatus !== $status;
+        $reversal = null;
 
         if ($status === TransactionStatus::Confirmed) {
             $this->credit($transaction);
         } elseif ($status === TransactionStatus::Orphaned || $status === TransactionStatus::Failed) {
+            // Only a transaction that had actually settled can take a payment
+            // back. One that was merely `detected` never counted towards the
+            // invoice's confirmed total, so losing it is not a reversal, and a
+            // replayed `orphaned` payload (previous status already orphaned)
+            // must not raise a second one.
+            if ($previousStatus === TransactionStatus::Confirmed) {
+                $reversal = [
+                    'transaction_id' => $transaction->id,
+                    'tx_hash' => $transaction->tx_hash,
+                    'amount' => Money::format(
+                        $transaction->amount,
+                        $registry->decimals($transaction->network_code, $transaction->currency)
+                    ),
+                    'reason' => $status->value,
+                ];
+            }
+
             $this->reverse($transaction);
         }
 
         $this->syncPending($transaction);
 
-        return [$transaction, $statusChanged || $previousStatus === null];
+        return [$transaction, $statusChanged || $previousStatus === null, $reversal];
     }
 
     /**

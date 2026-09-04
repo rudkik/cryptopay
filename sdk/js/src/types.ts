@@ -340,9 +340,21 @@ export type WebhookEventName =
   | 'invoice.paid'
   | 'invoice.overpaid'
   | 'invoice.partially_paid'
+  | 'invoice.reversed'
   | 'invoice.expired'
   | 'invoice.cancelled'
   | 'token_purchase.completed'
+
+/**
+ * Что именно отозвал реорг — блок `data.reversal` события `invoice.reversed`.
+ */
+export interface WebhookReversal {
+  transaction_id: string
+  tx_hash: string
+  /** Сумма, снятая с подтверждённого итога счёта. */
+  amount: string
+  reason: 'orphaned' | 'failed'
+}
 
 export interface WebhookPayload {
   id: string
@@ -351,6 +363,8 @@ export interface WebhookPayload {
   data: {
     invoice: Invoice | null
     token_purchase: TokenPurchase | null
+    /** Только в `invoice.reversed`. */
+    reversal?: WebhookReversal | null
   }
 }
 
@@ -361,6 +375,13 @@ export interface WebhookEvent {
   deliveryId: string
   invoice: Invoice | null
   tokenPurchase: TokenPurchase | null
+  /** Блок `data.reversal` события `invoice.reversed`, иначе `null`. */
+  reversal: WebhookReversal | null
   payload: WebhookPayload
   isPaid: boolean
+  /**
+   * Реорг (или проваленная транзакция) забрал уже засчитанный платёж, и счёт
+   * перестал быть оплаченным: отзовите всё, что выдали по этому счёту.
+   */
+  isReversed: boolean
 }

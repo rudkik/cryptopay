@@ -99,9 +99,9 @@ Base URL: `http://localhost:8095`. Ответы JSON. Ошибки:
 ```json
 { "error": { "code": "validation_error", "message": "...", "details": {"amount": ["..."]} } }
 ```
-Коды: `unauthenticated` (401), `forbidden` (403), `not_found` (404), `validation_error` (422), `invalid_state` (409), `rate_limited` (429), `server_error` (500),
+Коды: `unauthenticated` (401), `forbidden` (403), `not_found` (404), `method_not_allowed` (405), `validation_error` (422), `invalid_state` (409), `rate_limited` (429), `server_error` (500),
 `watcher_unavailable` (503, вотчер недоступен) и `wallet_not_configured` (503, для сети не задан xpub).
-Метод, не поддерживаемый маршрутом, отдаёт 405 с кодом `not_found`; тело больше 1 МБ — 413 с кодом `validation_error`.
+Метод, не поддерживаемый маршрутом, отдаёт 405 с кодом `method_not_allowed` и заголовком `Allow` с перечнем поддерживаемых методов; тело больше 1 МБ — 413 с кодом `validation_error`.
 
 ### 6.1 Merchant API — `/api/v1/*`
 Auth: `Authorization: Bearer cp_live_...`. Rate limit 120 req/min на ключ. Идемпотентность создания: заголовок `Idempotency-Key` (хранить в cache 24h → тот же ответ).
@@ -145,7 +145,13 @@ Auth: `Authorization: Bearer cp_live_...`. Rate limit 120 req/min на ключ.
 `POST {merchant.webhook_url}`, `Content-Type: application/json`, заголовки:
 `X-CryptoPay-Event`, `X-CryptoPay-Delivery` (uuid), `X-CryptoPay-Timestamp` (unix), `X-CryptoPay-Signature: sha256=<hex hmac_sha256(webhook_secret, timestamp + "." + raw_body)>`.
 Body: `{ "id": delivery_uuid, "event": "invoice.paid", "created_at": ISO, "data": { "invoice": Invoice, "token_purchase": {...}|null } }`.
-События: `invoice.confirming`, `invoice.paid`, `invoice.overpaid`, `invoice.partially_paid`, `invoice.expired`, `invoice.cancelled`, `token_purchase.completed`.
+События: `invoice.confirming`, `invoice.paid`, `invoice.overpaid`, `invoice.partially_paid`, `invoice.reversed`, `invoice.expired`, `invoice.cancelled`, `token_purchase.completed`.
+
+**`invoice.reversed`** — реорг (`orphaned`) или проваленная (`failed`) транзакция забрала подтверждённые деньги у счёта, который уже был `paid`/`overpaid`/`partially_paid`, и счёт перестал быть оплаченным (откатывается в `pending`/`confirming`/`partially_paid`/`expired`, `paid_at` обнуляется, зачисление снимается обратной записью в `ledger_entries`, пишется `audit_logs` `invoice.reversed`). В `data` добавляется блок:
+```json
+{ "reversal": { "transaction_id": "uuid", "tx_hash": "0x…", "amount": "100.000000", "reason": "orphaned" } }
+```
+`reason` — `orphaned` | `failed`. На такой переход отправляется **ровно один** `invoice.reversed`, обычное событие статуса при этом не дублируется. Получив его, мерчант обязан отозвать всё, что выдал по этому счёту. Повторное подтверждение той же транзакции снова даёт `invoice.paid`.
 Успех = 2xx. Ретраи: 1m, 5m, 30m, 2h, 6h, 24h (6 попыток) через очередь `webhooks`. Ручной повтор из админки.
 
 ### 6.3 Public (hosted checkout, без auth) — `/api/public/*`

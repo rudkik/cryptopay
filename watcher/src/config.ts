@@ -56,6 +56,8 @@ export interface AppConfig {
   logLevel: string;
   evmBatchBlocks: number;
   pollIntervalMs: number;
+  /** Интервал опроса по сети: POLL_INTERVAL_MS_<NETWORK> или дефолт по времени блока. */
+  pollIntervalFor: (network: string) => number;
   configRefreshMs: number;
   addressRefreshMs: number;
   heartbeatMs: number;
@@ -98,6 +100,15 @@ export function loadConfig(): AppConfig {
     logLevel: str('LOG_LEVEL', 'info'),
     evmBatchBlocks: int('EVM_BATCH_BLOCKS', 20),
     pollIntervalMs: int('POLL_INTERVAL_MS', 5000),
+    pollIntervalFor: (network: string): number => {
+      // Блок BSC ~0.75–1.5 с, Tron 3 с, Ethereum 12 с: единый интервал 5 с даёт на BSC
+      // «пилу» лага до ~10 блоков между тиками. Глобальный POLL_INTERVAL_MS остаётся
+      // потолком, POLL_INTERVAL_MS_<NETWORK> — точечное переопределение.
+      const defaults: Record<string, number> = { bsc: 1500, tron: 3000, ethereum: 5000 };
+      const global = int('POLL_INTERVAL_MS', 5000);
+      const perNetwork = int(`POLL_INTERVAL_MS_${network.toUpperCase()}`, Math.min(global, defaults[network] ?? global));
+      return Math.max(250, perNetwork);
+    },
     configRefreshMs: int('CONFIG_REFRESH_MS', 60_000),
     addressRefreshMs: int('ADDRESS_REFRESH_MS', 10_000),
     heartbeatMs: int('HEARTBEAT_MS', 15_000),

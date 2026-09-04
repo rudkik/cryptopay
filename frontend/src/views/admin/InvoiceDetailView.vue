@@ -116,6 +116,11 @@ const timeline = computed<TimelineStep[]>(() => {
   const status = inv.status
   const seenTx = transactions.value.length > 0
   const confirmed = transactions.value.some((tx) => tx.status === 'confirmed')
+  // A reorg (or a failed transfer) took a confirmed payment back and the
+  // invoice fell out of `paid` — the `invoice.reversed` case of SPEC §6.2.
+  // Without this step the timeline just rewound, with no trace of why.
+  const reversed =
+    !inv.is_paid && transactions.value.some((tx) => tx.status === 'orphaned' || tx.status === 'failed')
 
   const terminalBad: InvoiceStatus[] = ['expired', 'cancelled']
   const steps: TimelineStep[] = [
@@ -133,6 +138,10 @@ const timeline = computed<TimelineStep[]>(() => {
       state: confirmed ? 'done' : status === 'confirming' ? 'current' : 'todo',
     },
   ]
+
+  if (reversed) {
+    steps.push({ key: 'reversed', label: 'Payment reversed', at: null, state: 'failed' })
+  }
 
   if (terminalBad.includes(status)) {
     steps.push({

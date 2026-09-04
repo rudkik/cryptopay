@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\ApiKeyResource;
 use App\Http\Resources\MerchantResource;
 use App\Models\ApiKey;
+use App\Services\WebhookService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -30,11 +31,7 @@ class MeController extends Controller
                 'webhook' => [
                     'url' => $merchant->webhook_url,
                     'configured' => filled($merchant->webhook_url),
-                    'events' => [
-                        'invoice.confirming', 'invoice.paid', 'invoice.overpaid',
-                        'invoice.partially_paid', 'invoice.expired', 'invoice.cancelled',
-                        'token_purchase.completed',
-                    ],
+                    'events' => WebhookService::EVENTS,
                     'signature_header' => 'X-CryptoPay-Signature',
                 ],
                 'api_key' => $apiKey instanceof ApiKey ? (new ApiKeyResource($apiKey))->toArray($request) : null,

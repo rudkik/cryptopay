@@ -9,8 +9,8 @@ namespace CryptoPay\Sdk\Exception;
  *
  * getMessage() returns the API-provided message. getErrorCode() returns the
  * machine-readable `error.code` from the response envelope (e.g.
- * `validation_error`, `not_found`, `unauthenticated`, `invalid_state`,
- * `rate_limited`, `server_error`), or `http_error` when the body could not
+ * `validation_error`, `not_found`, `method_not_allowed`, `unauthenticated`,
+ * `invalid_state`, `rate_limited`, `server_error`), or `http_error` when the body could not
  * be parsed and the status was not >= 500.
  */
 class ApiException extends CryptoPayException
@@ -71,5 +71,11 @@ class ApiException extends CryptoPayException
     public function isRateLimited(): bool
     {
         return $this->errorCode === 'rate_limited';
+    }
+
+    /** The path exists but not for that HTTP verb (405). */
+    public function isMethodNotAllowed(): bool
+    {
+        return $this->errorCode === 'method_not_allowed';
     }
 }

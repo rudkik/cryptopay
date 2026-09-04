@@ -21,6 +21,7 @@ class InvoiceService
     public function __construct(
         private readonly AddressService $addresses,
         private readonly WebhookService $webhooks,
+        private readonly AuditLogger $audit,
     ) {}
 
     /**
@@ -230,6 +231,12 @@ class InvoiceService
      * Recompute received/confirmed totals and the status from the invoice's
      * transactions, persist any change, and emit the matching webhook.
      *
+     * `$reversal` is set by TransactionIngestService when the recalculation was
+     * triggered by a confirmed transaction going `orphaned`/`failed`. It is the
+     * only way an invoice can *lose* settled money, so it is also the only way
+     * `invoice.reversed` is emitted — an expiry sweep or a fresh payment never
+     * produces one.
+     *
      * The whole decision happens under a row lock on the invoice, because the
      * question "did the status change?" is what gates the webhook, and it can
      * only be answered against the committed row. Two watcher payloads for the
@@ -240,10 +247,15 @@ class InvoiceService
      * `paid`, and the merchant gets two `invoice.paid` deliveries for one
      * payment. Under the lock the loser re-reads `paid`, sees no transition and
      * stays quiet.
+     *
+     * @param  array{transaction_id: string, tx_hash: string, amount: string, reason: string}|null  $reversal
      */
-    public function recalculate(Invoice $invoice, bool $expiring = false): Invoice
+    public function recalculate(Invoice $invoice, bool $expiring = false, ?array $reversal = null): Invoice
     {
-        $transition = DB::transaction(function () use ($invoice, $expiring) {
+        $previous = null;
+        $reversed = false;
+
+        $transition = DB::transaction(function () use ($invoice, $expiring, $reversal, &$previous, &$reversed) {
             $locked = Invoice::query()->whereKey($invoice->getKey())->lockForUpdate()->first();
 
             if (! $locked) {
@@ -282,6 +294,11 @@ class InvoiceService
             $previous = $invoice->status;
             $next = $this->resolveStatus($invoice, $confirmed, $received, $expiring);
 
+            // Decided under the same lock as the transition itself: whoever
+            // wins the race is the one caller that saw the invoice stop being
+            // paid, so exactly one `invoice.reversed` goes out.
+            $reversed = $reversal !== null && $next !== $previous && $this->isReversal($previous, $next);
+
             $changes = [
                 'amount_received' => $received,
                 'amount_confirmed' => $confirmed,
@@ -313,12 +330,44 @@ class InvoiceService
                 app(TokenPurchaseService::class)->syncWithInvoice($invoice);
             }
 
-            if ($transition->emitsWebhook()) {
+            if ($reversed) {
+                // The plain status event is deliberately *not* sent alongside:
+                // a bare `invoice.confirming` (or nothing at all, for a return
+                // to `pending`) after an `invoice.paid` reads like a second
+                // payment starting rather than the first one being undone.
+                // `invoice.reversed` carries the fresh invoice plus what was
+                // taken back, which is everything the merchant needs.
+                $this->audit->log('invoice.reversed', $invoice, [
+                    'status' => ['from' => $previous?->value, 'to' => $transition->value],
+                    'reversal' => $reversal,
+                ]);
+
+                $this->webhooks->dispatchInvoiceEvent(
+                    WebhookService::INVOICE_REVERSED,
+                    $invoice->refresh(),
+                    extra: ['reversal' => $reversal],
+                );
+            } elseif ($transition->emitsWebhook()) {
                 $this->webhooks->dispatchInvoiceEvent($transition->webhookEvent(), $invoice->refresh());
             }
         }
 
         return $invoice;
+    }
+
+    /**
+     * The invoice held settled money and no longer counts as paid.
+     *
+     * `paid` -> `partially_paid` counts: part of what was credited went away
+     * and the merchant has to give back the difference. `overpaid` -> `paid`
+     * does not: the invoice is still paid, and the surviving transaction still
+     * covers it.
+     */
+    private function isReversal(InvoiceStatus $previous, InvoiceStatus $next): bool
+    {
+        $settled = [InvoiceStatus::Paid, InvoiceStatus::Overpaid, InvoiceStatus::PartiallyPaid];
+
+        return in_array($previous, $settled, true) && ! $next->isPaid();
     }
 
     /**

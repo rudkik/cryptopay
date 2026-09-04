@@ -144,7 +144,8 @@ try {
 ```
 
 Коды ошибок API: `unauthenticated` (401), `forbidden` (403), `not_found` (404),
-`validation_error` (422), `invalid_state` (409), `rate_limited` (429), `server_error` (500).
+`method_not_allowed` (405), `validation_error` (422), `invalid_state` (409),
+`rate_limited` (429), `server_error` (500).
 
 ## Идемпотентность
 
@@ -170,6 +171,13 @@ try {
   if (event.isPaid) {
     // event.event === 'invoice.paid' | 'invoice.overpaid'
     await markOrderPaid(event.invoice!.external_id)
+  }
+
+  if (event.isReversed) {
+    // Реорг забрал уже подтверждённый платёж: счёт больше не оплачен.
+    // Отзовите всё, что выдали по этому счёту — event.reversal содержит
+    // { transaction_id, tx_hash, amount, reason: 'orphaned' | 'failed' }.
+    await revokeOrder(event.invoice!.external_id, event.reversal!.amount)
   }
 } catch (err) {
   if (err instanceof SignatureError) {

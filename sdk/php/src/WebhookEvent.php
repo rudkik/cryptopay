@@ -62,6 +62,30 @@ final readonly class WebhookEvent
         return in_array($this->event, ['invoice.paid', 'invoice.overpaid'], true);
     }
 
+    /**
+     * A reorg (or a failed transaction) took back a payment this invoice had
+     * already settled with, and it is no longer paid. Revoke whatever you
+     * credited for that invoice; `reversal()` says which transaction went away.
+     */
+    public function isReversed(): bool
+    {
+        return $this->event === 'invoice.reversed';
+    }
+
+    /**
+     * The `data.reversal` block of an `invoice.reversed` delivery:
+     * `{transaction_id, tx_hash, amount, reason: 'orphaned'|'failed'}`.
+     * Null on every other event.
+     *
+     * @return array<mixed>|null
+     */
+    public function reversal(): ?array
+    {
+        $data = is_array($this->payload['data'] ?? null) ? $this->payload['data'] : [];
+
+        return is_array($data['reversal'] ?? null) ? $data['reversal'] : null;
+    }
+
     public function isInvoiceEvent(): bool
     {
         return str_starts_with($this->event, 'invoice.');

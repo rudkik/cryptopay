@@ -148,6 +148,12 @@ try {
 if ($event->isPaid()) {
     // $event->invoice->id, $event->invoice->amount, ...
 }
+
+if ($event->isReversed()) {
+    // Реорг забрал уже подтверждённый платёж: счёт больше не оплачен.
+    // Отзовите всё, что выдали по этому счёту. $event->reversal() —
+    // ['transaction_id' => ..., 'tx_hash' => ..., 'amount' => ..., 'reason' => 'orphaned'|'failed'].
+}
 ```
 
 Важно: `Webhook::verify()` должен получать **сырое, неизменённое** тело
@@ -303,14 +309,16 @@ try {
     $client->cancelInvoice($id);
 } catch (ApiException $e) {
     $e->getMessage();          // сообщение от API
-    $e->getErrorCode();        // 'validation_error' | 'not_found' | 'unauthenticated' |
-                                // 'invalid_state' | 'rate_limited' | 'server_error' | 'http_error'
+    $e->getErrorCode();        // 'validation_error' | 'not_found' | 'method_not_allowed' |
+                                // 'unauthenticated' | 'invalid_state' | 'rate_limited' |
+                                // 'server_error' | 'http_error'
     $e->getHttpStatus();       // int, например 409
     $e->getDetails();          // array, например ['amount' => ['...']] для validation_error
 
     $e->isValidationError();   // code === 'validation_error'
     $e->isNotFound();          // code === 'not_found'
     $e->isRateLimited();       // code === 'rate_limited'
+    $e->isMethodNotAllowed();  // code === 'method_not_allowed'
 }
 ```
 
@@ -359,7 +367,7 @@ $invoice = $client->createInvoice($params, $idempotencyKey);
 | Класс | Назначение |
 |---|---|
 | `CryptoPay\Sdk\Webhook::verify()/::sign()` | Проверка и подпись вебхуков |
-| `CryptoPay\Sdk\WebhookEvent` | Разобранное событие вебхука (`->isPaid()`, `->invoice`, `->tokenPurchase`) |
+| `CryptoPay\Sdk\WebhookEvent` | Разобранное событие вебхука (`->isPaid()`, `->isReversed()`, `->reversal()`, `->invoice`, `->tokenPurchase`) |
 | `CryptoPay\Sdk\Dto\Paginated` | Страница результатов (`IteratorAggregate`, `Countable`, `->total()`, `->hasMorePages()`) |
 | `CryptoPay\Sdk\Dto\ApiKey` | Метаданные ключа (`->keyPrefix`, `->lastUsedAt`, `->isRevoked()`); сам ключ API не возвращает никогда |
 | `CryptoPay\Sdk\Http\TransportInterface` | Свой HTTP-транспорт вместо `CurlTransport` (например, для тестов) |

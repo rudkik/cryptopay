@@ -63,6 +63,11 @@ export class ApiError extends CryptoPayError {
   get isRateLimited(): boolean {
     return this.code === 'rate_limited'
   }
+
+  /** `true`, если путь есть, но не для этого HTTP-метода (HTTP 405, code `method_not_allowed`). */
+  get isMethodNotAllowed(): boolean {
+    return this.code === 'method_not_allowed'
+  }
 }
 
 /** Ошибка проверки подписи вебхука (см. {@link verifyWebhook}). */

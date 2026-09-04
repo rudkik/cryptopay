@@ -42,5 +42,6 @@ export type {
   ListTokenPurchasesFilters,
   WebhookEventName,
   WebhookPayload,
+  WebhookReversal,
   WebhookEvent,
 } from './types.js'

@@ -129,7 +129,23 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             if ($e instanceof MethodNotAllowedHttpException) {
-                return ErrorResponse::make('not_found', 'The requested method is not supported for this route.', 405);
+                $response = ErrorResponse::make(
+                    'method_not_allowed',
+                    'The requested method is not supported for this route.',
+                    405,
+                );
+
+                // RFC 9110 makes `Allow` mandatory on a 405, and Symfony
+                // already knows the answer: the router builds the exception
+                // with the methods the URI *does* accept. Pass it through
+                // rather than making the caller guess.
+                $allow = $e->getHeaders()['Allow'] ?? null;
+
+                if (is_string($allow) && $allow !== '') {
+                    $response->headers->set('Allow', $allow);
+                }
+
+                return $response;
             }
 
             if ($e instanceof TooManyRequestsHttpException) {
@@ -143,6 +159,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     401 => 'unauthenticated',
                     403 => 'forbidden',
                     404 => 'not_found',
+                    405 => 'method_not_allowed',
                     409 => 'invalid_state',
                     422 => 'validation_error',
                     429 => 'rate_limited',

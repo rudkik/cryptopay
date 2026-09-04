@@ -432,6 +432,29 @@ describe('transport hardening', () => {
     expect(attempts).toBe(1) // no hidden retry loop
   })
 
+  it('flags a 405 as isMethodNotAllowed, not isNotFound', async () => {
+    const { c } = client(
+      () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 'method_not_allowed',
+              message: 'The requested method is not supported for this route.',
+              details: {},
+            },
+          }),
+          { status: 405, headers: { 'Content-Type': 'application/json', Allow: 'GET, HEAD' } },
+        ),
+    )
+
+    const err = await c.listInvoices().catch((e) => e)
+
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).isMethodNotAllowed).toBe(true)
+    expect((err as ApiError).isNotFound).toBe(false)
+    expect((err as ApiError).status).toBe(405)
+  })
+
   it('retryAfter is null when the header is absent or not a plain number', async () => {
     const { c } = client(
       () =>

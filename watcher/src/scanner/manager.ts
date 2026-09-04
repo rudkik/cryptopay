@@ -217,7 +217,8 @@ export class ScannerManager {
   }
 
   private async runLoop(runtime: Runtime): Promise<void> {
-    let backoff = this.cfg.pollIntervalMs;
+    const poll = this.cfg.pollIntervalFor(runtime.config.code);
+    let backoff = poll;
     while (!this.stopped) {
       const before = Date.now();
 
@@ -237,7 +238,7 @@ export class ScannerManager {
         // Отстаём от head без ошибок — режим догона: не ждём полный poll interval.
         backoff = 250;
       } else {
-        backoff = this.cfg.pollIntervalMs;
+        backoff = poll;
       }
 
       const elapsed = Date.now() - before;

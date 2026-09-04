@@ -43,6 +43,7 @@ const EVENT_OPTIONS = computed<Option[]>(() => [
   { value: 'invoice.paid', label: 'invoice.paid' },
   { value: 'invoice.overpaid', label: 'invoice.overpaid' },
   { value: 'invoice.partially_paid', label: 'invoice.partially_paid' },
+  { value: 'invoice.reversed', label: 'invoice.reversed' },
   { value: 'invoice.expired', label: 'invoice.expired' },
   { value: 'invoice.cancelled', label: 'invoice.cancelled' },
   ...(auth.tokenSaleEnabled

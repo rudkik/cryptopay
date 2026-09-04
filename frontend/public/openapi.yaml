@@ -721,6 +721,37 @@ webhooks:
         '200':
           description: Любой 2xx считается успехом.
 
+  invoice.reversed:
+    post:
+      tags: [Invoices]
+      operationId: webhookInvoiceReversed
+      summary: Подтверждённый платёж отозван реоргом
+      description: |
+        Реорг (`orphaned`) или проваленная (`failed`) транзакция забрала
+        подтверждённые деньги у счёта, который уже был `paid` / `overpaid` /
+        `partially_paid`, и счёт перестал быть оплаченным: он откатывается в
+        `pending` / `confirming` / `partially_paid` / `expired`, `paid_at`
+        обнуляется, а зачисление снимается обратной записью в `ledger_entries`.
+
+        В `data` добавляется блок `reversal`. **Получив это событие, отзовите
+        всё, что выдали по этому счёту.** На переход отправляется ровно одно
+        `invoice.reversed`; повторное подтверждение той же транзакции снова
+        даёт `invoice.paid`.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/WebhookEventHeader'
+        - $ref: '#/components/parameters/WebhookDeliveryHeader'
+        - $ref: '#/components/parameters/WebhookTimestampHeader'
+        - $ref: '#/components/parameters/WebhookSignatureHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookEvent' }
+      responses:
+        '200':
+          description: Любой 2xx считается успехом.
+
   invoice.expired:
     post:
       tags: [Invoices]
@@ -986,6 +1017,7 @@ components:
         - unauthenticated
         - forbidden
         - not_found
+        - method_not_allowed
         - validation_error
         - invalid_state
         - rate_limited
@@ -1681,9 +1713,26 @@ components:
         - invoice.paid
         - invoice.overpaid
         - invoice.partially_paid
+        - invoice.reversed
         - invoice.expired
         - invoice.cancelled
         - token_purchase.completed
+
+    WebhookReversal:
+      type: object
+      description: |
+        Транзакция, отозвавшая платёж по счёту (событие `invoice.reversed`).
+      required: [transaction_id, tx_hash, amount, reason]
+      properties:
+        transaction_id: { type: string, format: uuid }
+        tx_hash: { type: string, examples: ['0xabc…'] }
+        amount:
+          type: string
+          description: Сумма, снятая с подтверждённого итога счёта.
+          examples: ['100.000000']
+        reason:
+          type: string
+          enum: [orphaned, failed]
 
     WebhookEvent:
       type: object
@@ -1710,4 +1759,9 @@ components:
             token_purchase:
               oneOf:
                 - { $ref: '#/components/schemas/TokenPurchase' }
+                - { type: 'null' }
+            reversal:
+              description: Только в `invoice.reversed` — что именно было отозвано.
+              oneOf:
+                - { $ref: '#/components/schemas/WebhookReversal' }
                 - { type: 'null' }

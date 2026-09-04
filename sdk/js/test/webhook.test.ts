@@ -86,6 +86,49 @@ describe('verifyWebhook', () => {
     expect(event.isPaid).toBe(false)
   })
 
+  it('exposes isReversed and the reversal block for invoice.reversed', () => {
+    const payload = makePayload({
+      event: 'invoice.reversed',
+      data: {
+        invoice: { ...invoiceFixture, status: 'pending', is_paid: false, paid_at: null },
+        token_purchase: null,
+        reversal: {
+          transaction_id: '01a06089-c3c9-7394-9750-480c130315fd',
+          tx_hash: '0xdeadbeef',
+          amount: '12.500000',
+          reason: 'orphaned',
+        },
+      },
+    })
+    const body = JSON.stringify(payload)
+    const timestamp = Math.floor(Date.now() / 1000)
+    const signature = sign(SECRET, timestamp, body)
+
+    const event = verifyWebhook(body, headersFor(timestamp, signature), SECRET)
+
+    expect(event.isReversed).toBe(true)
+    expect(event.isPaid).toBe(false)
+    expect(event.reversal).toEqual({
+      transaction_id: '01a06089-c3c9-7394-9750-480c130315fd',
+      tx_hash: '0xdeadbeef',
+      amount: '12.500000',
+      reason: 'orphaned',
+    })
+    expect(event.invoice?.is_paid).toBe(false)
+  })
+
+  it('isReversed is false and reversal is null on every other event', () => {
+    const payload = makePayload()
+    const body = JSON.stringify(payload)
+    const timestamp = Math.floor(Date.now() / 1000)
+    const signature = sign(SECRET, timestamp, body)
+
+    const event = verifyWebhook(body, headersFor(timestamp, signature), SECRET)
+
+    expect(event.isReversed).toBe(false)
+    expect(event.reversal).toBeNull()
+  })
+
   it('is case-insensitive for header names', () => {
     const payload = makePayload()
     const body = JSON.stringify(payload)
