@@ -1,4 +1,4 @@
-.PHONY: up down build logs keys ps restart shell test check-env secrets secrets-prod
+.PHONY: up pull-up down build logs keys ps restart shell test check-env secrets secrets-prod
 
 
 check-env: ## проверить .env на плейсхолдеры (в APP_ENV != local падает)
@@ -9,6 +9,15 @@ secrets: ## заполнить пустые/дефолтные секреты в
 
 secrets-prod: ## то же + APP_ENV=production, APP_DEBUG/SIMULATION/WEBHOOK_ALLOW_PRIVATE=false
 	@./scripts/init-env.sh .env --production
+
+pull-up: ## запуск из готовых образов GHCR без сборки (IMAGE_PREFIX/IMAGE_TAG в .env)
+	@[ -f .env ] || cp .env.example .env
+	@grep -qE '^APP_KEY=.+' .env || { \
+		KEY="base64:$$(openssl rand -base64 32)"; \
+		sed -i.bak "s|^APP_KEY=.*|APP_KEY=$$KEY|" .env && rm -f .env.bak; }
+	@./scripts/check-env.sh .env
+	docker compose pull
+	docker compose up -d --no-build
 
 up: ## build & start everything
 	@[ -f .env ] || cp .env.example .env

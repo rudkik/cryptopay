@@ -105,6 +105,9 @@ services:
     restart: unless-stopped
 
   app:
+    # IMAGE_PREFIX=ghcr.io/<owner>/cryptopay + IMAGE_TAG=latest → `docker compose pull`
+    # вместо сборки на сервере (DEPLOY.md «Готовые образы»). Один образ на app/queue/scheduler.
+    image: ${IMAGE_PREFIX:-cryptopay}-app:${IMAGE_TAG:-latest}
     build:
       context: ./backend
     <<: *hardening
@@ -123,8 +126,7 @@ services:
     restart: unless-stopped
 
   queue:
-    build:
-      context: ./backend
+    image: ${IMAGE_PREFIX:-cryptopay}-app:${IMAGE_TAG:-latest}
     <<: *hardening
     logging: *default-logging
     command: ["php", "artisan", "queue:work", "redis", "--queue=default,webhooks", "--tries=3", "--sleep=2", "--max-time=3600"]
@@ -138,8 +140,7 @@ services:
     restart: unless-stopped
 
   scheduler:
-    build:
-      context: ./backend
+    image: ${IMAGE_PREFIX:-cryptopay}-app:${IMAGE_TAG:-latest}
     <<: *hardening
     logging: *default-logging
     command: ["php", "artisan", "schedule:work"]
@@ -153,6 +154,7 @@ services:
     restart: unless-stopped
 
   watcher:
+    image: ${IMAGE_PREFIX:-cryptopay}-watcher:${IMAGE_TAG:-latest}
     build:
       context: ./watcher
     <<: *hardening
@@ -189,6 +191,7 @@ services:
     restart: unless-stopped
 
   nginx:
+    image: ${IMAGE_PREFIX:-cryptopay}-nginx:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: docker/nginx/Dockerfile

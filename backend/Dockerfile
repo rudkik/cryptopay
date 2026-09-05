@@ -13,10 +13,9 @@
 # ---------------------------------------------------------------------------
 FROM php:8.4-fpm-alpine AS vendor
 
-RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS postgresql-dev gmp-dev \
-    && docker-php-ext-install -j"$(nproc)" pdo_pgsql bcmath gmp \
-    && apk del .build-deps
-
+# Расширения здесь не собираем (это самая дорогая часть сборки, а на слабом
+# сервере — десятки минут): composer'у они нужны только для проверки
+# platform-требований, которую отключаем для ext-*.
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
@@ -31,6 +30,10 @@ RUN composer install \
         --no-autoloader \
         --no-interaction \
         --prefer-dist \
+        --ignore-platform-req=ext-bcmath \
+        --ignore-platform-req=ext-gmp \
+        --ignore-platform-req=ext-pdo_pgsql \
+        --ignore-platform-req=ext-pcntl \
     && rm -rf /root/.composer/cache
 
 # ---------------------------------------------------------------------------

@@ -83,6 +83,33 @@ docker compose logs -f app   # ждём "[entrypoint] Starting: php-fpm"
 Первый вход: `https://pay.example.com/login` (или `http://IP:8095/login`), логин `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
 Сразу после входа создайте личных пользователей в «Admin users» и смените пароль бутстрап-админа.
 
+## 4a. Готовые образы вместо сборки на сервере (рекомендуется)
+
+Сборка на сервере компилирует PHP-расширения и фронтенд; на слабой VPS (1 vCPU, 1–2 ГБ RAM) это занимает
+от 30 минут до часа и может упасть по памяти. Вместо этого образы собирает GitHub Actions при каждом push
+в `main` (workflow `.github/workflows/images.yml`) и публикует в GHCR:
+`ghcr.io/<owner>/cryptopay-app`, `-watcher`, `-nginx` (amd64 и arm64).
+
+Один раз: в GitHub → Packages сделайте три пакета публичными, либо на сервере выполните
+`docker login ghcr.io` с токеном `read:packages`.
+
+На сервере в `.env`:
+
+```bash
+IMAGE_PREFIX=ghcr.io/<owner>/cryptopay
+IMAGE_TAG=latest              # или короткий SHA коммита для фиксации версии
+```
+
+и вместо `make up` используйте:
+
+```bash
+make pull-up                  # docker compose pull + up без сборки, ~1 минута
+```
+
+Обновление версии: `git pull && make pull-up`. Если всё же собираете на сервере: добавьте swap
+(`fallocate -l 2G /swapfile && mkswap /swapfile && swapon /swapfile`) и запускайте
+`COMPOSE_PARALLEL_LIMIT=1 make up`, чтобы образы собирались по очереди.
+
 ## 5. Кошелёк: куда приходят деньги
 
 Сервис хранит только расширенные публичные ключи (xpub). Деньги приходят на адреса, выведенные из вашего
@@ -169,6 +196,7 @@ gunzip -c /backup/cryptopay-2026-09-05.sql.gz | docker compose exec -T postgres 
 |---------|--------------------|
 | `/api/internal/*` отвечает 503 | `INTERNAL_API_TOKEN` оставлен плейсхолдером: задайте случайный и перезапустите `app`, `queue`, `scheduler`, `watcher` вместе |
 | Счёт не создаётся, ошибка `wallet_not_configured` | не задан xpub для сети: раздел 5 |
+| Сборка идёт десятки минут / падает по памяти | слабый сервер: используйте готовые образы (`make pull-up`, раздел 4a) или swap + `COMPOSE_PARALLEL_LIMIT=1` |
 | `make up` падает на check-env | в `.env` остались значения из примера: `make secrets-prod`, затем проверьте `APP_URL` |
 | Watcher «Degraded», лаг растёт | лимиты публичного RPC/TronGrid: задайте `TRON_API_KEY`, свои RPC; `docker compose logs watcher` |
 | Вебхуки `failed` | ваш сервис отвечает не 2xx, либо адрес приватный при `WEBHOOK_ALLOW_PRIVATE=false`; кнопка Retry в админке |
