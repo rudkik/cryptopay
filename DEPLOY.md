@@ -32,25 +32,25 @@ chmod 600 .env
 
 ## 3. Настройка `.env`
 
-Обязательные изменения для продакшена:
+Файл `.env` не исполняет команды: в нём должны стоять готовые значения, а не `$(openssl …)`.
+Все секреты заполняет одна команда (уже заданные значения она не трогает):
 
 ```bash
-APP_ENV=production
-APP_DEBUG=false
-APP_URL=https://pay.example.com          # внешний адрес (на IP-этапе: http://1.2.3.4:8095)
-APP_KEY=                                  # оставьте пустым: make up сгенерирует и запишет
+make secrets-prod
+```
 
-SIMULATION_ENABLED=false
-TOKEN_SALE_ENABLED=false
-WEBHOOK_ALLOW_PRIVATE=false               # true только если ваши сервисы на приватных адресах
+Она генерирует `APP_KEY`, `DB_PASSWORD`, `REDIS_PASSWORD`, `INTERNAL_API_TOKEN`, `ADMIN_PASSWORD`
+(пароль администратора печатается один раз — сохраните), выставляет `APP_ENV=production`, `APP_DEBUG=false`,
+`SIMULATION_ENABLED=false`, `WEBHOOK_ALLOW_PRIVATE=false`. Запускайте её **до** первого `make up`:
+после создания базы пароли БД и Redis сменить одной командой уже нельзя.
 
-DB_PASSWORD=$(openssl rand -hex 24)       # подставьте значения, не команды
-REDIS_PASSWORD=$(openssl rand -hex 24)
-INTERNAL_API_TOKEN=$(openssl rand -hex 32)
+Затем откройте `.env` и заполните вручную:
+
+```bash
+APP_URL=https://pay.example.com          # внешний адрес; на IP-этапе: http://1.2.3.4:8095
 ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=<длинный пароль, минимум 12 символов>
 
-ETH_RPC_URL=https://...                   # свои ноды или провайдер
+ETH_RPC_URL=https://...                   # свои ноды или провайдер (публичные из примера годятся для старта)
 BSC_RPC_URL=https://...
 TRON_API_KEY=<ключ с trongrid.io>
 
@@ -60,9 +60,10 @@ ACME_EMAIL=admin@example.com
 APP_BIND=127.0.0.1
 ```
 
-`EVM_XPUB` / `TRON_XPUB` можно оставить пустыми: кошелёк удобнее задать через админку (раздел 5).
+`WEBHOOK_ALLOW_PRIVATE=true` нужен только если ваши сервисы принимают вебхуки на приватных адресах.
+`EVM_XPUB` / `TRON_XPUB` можно оставить пустыми: кошелёк задаётся через админку (раздел 5).
 
-Проверка перед запуском (падает, если остались плейсхолдеры):
+Проверка (падает, если остались плейсхолдеры или опасные флаги):
 
 ```bash
 make check-env
@@ -168,6 +169,7 @@ gunzip -c /backup/cryptopay-2026-09-05.sql.gz | docker compose exec -T postgres 
 |---------|--------------------|
 | `/api/internal/*` отвечает 503 | `INTERNAL_API_TOKEN` оставлен плейсхолдером: задайте случайный и перезапустите `app`, `queue`, `scheduler`, `watcher` вместе |
 | Счёт не создаётся, ошибка `wallet_not_configured` | не задан xpub для сети: раздел 5 |
+| `make up` падает на check-env | в `.env` остались значения из примера: `make secrets-prod`, затем проверьте `APP_URL` |
 | Watcher «Degraded», лаг растёт | лимиты публичного RPC/TronGrid: задайте `TRON_API_KEY`, свои RPC; `docker compose logs watcher` |
 | Вебхуки `failed` | ваш сервис отвечает не 2xx, либо адрес приватный при `WEBHOOK_ALLOW_PRIVATE=false`; кнопка Retry в админке |
 | После смены `.env` ничего не изменилось | переменные читаются при старте: `docker compose up -d` (пересоздаст изменившиеся контейнеры) |

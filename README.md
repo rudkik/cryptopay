@@ -16,6 +16,7 @@
 
 ```bash
 cp .env.example .env          # при необходимости отредактируйте
+make secrets                  # заполнит APP_KEY, пароли БД/Redis, internal token (для прода: make secrets-prod)
 make up                       # docker compose up -d --build
 ```
 

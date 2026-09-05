@@ -66,10 +66,9 @@ case "$(get WEBHOOK_ALLOW_PRIVATE)" in
     true|TRUE|1) fail "WEBHOOK_ALLOW_PRIVATE=true — вебхуки смогут бить по внутренним адресам (SSRF)" ;;
 esac
 
-if [ -n "$(get EVM_XPUB)" ] || [ -n "$(get TRON_XPUB)" ]; then
-    :
-else
-    fail "EVM_XPUB/TRON_XPUB не заданы — деривация адресов отключена (make keys)"
+if [ -z "$(get EVM_XPUB)" ] && [ -z "$(get TRON_XPUB)" ]; then
+    # Не ошибка: кошелёк задаётся на странице Wallet в админке (DEPLOY.md §5).
+    echo "  note    EVM_XPUB/TRON_XPUB не заданы в .env — задайте xpub в админке (Wallet) или через make keys"
 fi
 
 if [ "$problems" -eq 0 ]; then
