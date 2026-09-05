@@ -15,6 +15,10 @@ pull-up: ## запуск из готовых образов GHCR без сбор
 		KEY="base64:$$(openssl rand -base64 32)"; \
 		sed -i.bak "s|^APP_KEY=.*|APP_KEY=$$KEY|" .env && rm -f .env.bak; }
 	@./scripts/check-env.sh .env
+	@grep -qE '^IMAGE_PREFIX=.+' .env || { \
+		echo "pull-up: в .env не задан IMAGE_PREFIX (например IMAGE_PREFIX=ghcr.io/rudkik/cryptopay)."; \
+		echo "         Образы публикует GitHub Actions после push в main (см. DEPLOY.md 4a). Для сборки на месте: make up"; \
+		exit 1; }
 	docker compose pull
 	docker compose up -d --no-build
 
