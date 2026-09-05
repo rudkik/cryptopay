@@ -1,5 +1,6 @@
 .PHONY: up down build logs keys ps restart shell test check-env
 
+
 check-env: ## проверить .env на плейсхолдеры (в APP_ENV != local падает)
 	@./scripts/check-env.sh .env
 
