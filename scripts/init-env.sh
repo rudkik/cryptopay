@@ -48,19 +48,32 @@ fi
 
 case "$(get DB_PASSWORD)" in
     ''|secret|password|postgres)
+        newpw="$(rand_hex 24)"
         if [ "$volumes_exist" -eq 1 ]; then
-            echo "  skip    DB_PASSWORD: том postgres-data уже существует, пароль менять нельзя без пересоздания БД" >&2
+            # База уже инициализирована старым паролем: меняем его прямо в Postgres
+            # (внутри контейнера psql ходит по unix-сокету без пароля), затем пишем в .env.
+            echo "  info    DB_PASSWORD: том postgres-data уже существует — меняю пароль в работающей БД"
+            docker compose up -d postgres >/dev/null 2>&1 || true
+            i=0
+            until docker compose exec -T postgres pg_isready -U "$(get DB_USERNAME)" -d "$(get DB_DATABASE)" >/dev/null 2>&1; do
+                i=$((i + 1)); [ "$i" -lt 30 ] || break; sleep 1
+            done
+            if docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$(get DB_USERNAME)" -d "$(get DB_DATABASE)" \
+                -c "ALTER USER \"$(get DB_USERNAME)\" PASSWORD '$newpw';" >/dev/null 2>&1; then
+                set_kv DB_PASSWORD "$newpw"; note "DB_PASSWORD (обновлён и в БД)"
+            else
+                echo "  ERROR   DB_PASSWORD: не удалось сменить пароль в Postgres. Вручную:" >&2
+                echo "          docker compose exec postgres psql -U $(get DB_USERNAME) -d $(get DB_DATABASE) -c \"ALTER USER $(get DB_USERNAME) PASSWORD '<новый>';\"" >&2
+                echo "          затем DB_PASSWORD=<новый> в .env. Либо, если данных ещё нет: docker compose down -v && make secrets-prod" >&2
+            fi
         else
-            set_kv DB_PASSWORD "$(rand_hex 24)"; note "DB_PASSWORD"
+            set_kv DB_PASSWORD "$newpw"; note "DB_PASSWORD"
         fi ;;
 esac
 
 if [ -z "$(get REDIS_PASSWORD)" ]; then
-    if [ "$volumes_exist" -eq 1 ]; then
-        echo "  skip    REDIS_PASSWORD: стек уже создан — задайте вручную и перезапустите redis+app+queue+scheduler" >&2
-    else
-        set_kv REDIS_PASSWORD "$(rand_hex 24)"; note "REDIS_PASSWORD"
-    fi
+    # requirepass читается при старте redis: make up пересоздаст redis и клиентов с новым паролем.
+    set_kv REDIS_PASSWORD "$(rand_hex 24)"; note "REDIS_PASSWORD"
 fi
 
 case "$(get INTERNAL_API_TOKEN)" in
