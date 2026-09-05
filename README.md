@@ -10,7 +10,7 @@
 | `frontend/` | Vue 3, Vite, TypeScript, Tailwind      | Админка (светлая тёплая тема) + публичная страница оплаты `/pay/:id` |
 | `watcher/`  | Node 22, TypeScript, ethers, TronGrid  | Микросервис: деривация HD‑адресов, сканирование сетей, подтверждения |
 
-Полный контракт между сервисами — в [SPEC.md](SPEC.md).
+Полный контракт между сервисами — в [SPEC.md](SPEC.md), продакшен-развёртывание — в [DEPLOY.md](DEPLOY.md), безопасность — в [SECURITY.md](SECURITY.md).
 
 ## Быстрый старт (Docker)
 
