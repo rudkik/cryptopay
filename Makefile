@@ -1,5 +1,6 @@
 .PHONY: up pull-up down build logs keys ps restart shell test check-env secrets secrets-prod domain deploy backup caddy-logs help
 
+
 check-env: ## проверить .env на плейсхолдеры (в APP_ENV != local падает)
 	@./scripts/check-env.sh .env
 
