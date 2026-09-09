@@ -45,6 +45,13 @@ return [
         'timeout' => min(10, max(1, (int) env('WEBHOOK_TIMEOUT', 10))),
     ],
 
+    'wallet' => [
+        // How long a pooled receiving address stays reserved for an invoice
+        // *after* the invoice expires, so a payment that lands late still
+        // matches its own invoice instead of the next one on the address.
+        'lease_grace' => max(0, (int) env('ADDRESS_LEASE_GRACE_SECONDS', 1800)),
+    ],
+
     'simulation' => [
         'enabled' => filter_var(env('SIMULATION_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
     ],

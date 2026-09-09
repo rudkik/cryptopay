@@ -10,6 +10,7 @@ use App\Http\Requests\Admin\StoreWalletXpubRequest;
 use App\Models\DepositAddress;
 use App\Models\LedgerEntry;
 use App\Models\Network;
+use App\Models\ReceivingAddress;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\Wallet;
@@ -145,6 +146,7 @@ class WalletController extends Controller
 
         $addresses = DepositAddress::query()
             ->where('network_code', $network)
+            ->whereNotNull('derivation_index')
             ->with(['merchant:id,name', 'invoice:id,external_id,status'])
             ->orderByDesc('derivation_index')
             ->paginate(min(100, max(1, (int) $request->integer('per_page', 25))));
@@ -202,6 +204,7 @@ class WalletController extends Controller
 
         $last = DepositAddress::query()
             ->where('network_code', $network->code)
+            ->whereNotNull('derivation_index')
             ->orderByDesc('derivation_index')
             ->first();
 
@@ -213,6 +216,9 @@ class WalletController extends Controller
             'standard' => NetworkCode::standardFor($network->code),
             'source' => $source,
             'configured' => $source !== 'none',
+            // Static receiving addresses on this network (Admin → Addresses);
+            // they are tried before the xpub whenever an invoice needs an address.
+            'receiving_addresses' => $this->receivingCounts()[$network->code] ?? 0,
             'xpub_masked' => $wallet->maskedXpub(),
             'derivation_path' => $wallet->derivation_path ?: Wallet::defaultPathFor($network->code),
             'label' => $wallet->label,
@@ -255,13 +261,31 @@ class WalletController extends Controller
     }
 
     /**
-     * Deposit addresses issued per network.
+     * Enabled static receiving addresses per network.
+     *
+     * @return array<string, int>
+     */
+    private function receivingCounts(): array
+    {
+        return ReceivingAddress::query()
+            ->where('is_enabled', true)
+            ->selectRaw('network_code, count(*) as aggregate')
+            ->groupBy('network_code')
+            ->pluck('aggregate', 'network_code')
+            ->map(fn ($count) => (int) $count)
+            ->all();
+    }
+
+    /**
+     * HD deposit addresses issued per network (pooled ones are not "issued"
+     * from the key and are listed on the Addresses page instead).
      *
      * @return array<string, int>
      */
     private function addressCounts(): array
     {
         return DepositAddress::query()
+            ->whereNotNull('derivation_index')
             ->selectRaw('network_code, count(*) as aggregate')
             ->groupBy('network_code')
             ->pluck('aggregate', 'network_code')

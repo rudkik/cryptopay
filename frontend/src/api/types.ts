@@ -166,8 +166,40 @@ export interface Network {
   tokens?: TokenContract[]
 }
 
-/** SPEC §3 — where the deposit key for a network comes from. */
-export type WalletSource = 'database' | 'env' | 'none'
+/**
+ * SPEC §3 — where the deposit key for a network comes from. `addresses` means
+ * there is no key at all but the static receiving-address list covers it.
+ */
+export type WalletSource = 'database' | 'env' | 'addresses' | 'none'
+
+export type ReceivingAddressStatus = 'free' | 'busy' | 'disabled'
+
+/** `GET /api/admin/receiving-addresses` row: one static "pay here" address. */
+export interface ReceivingAddress {
+  id: string
+  network: NetworkCode
+  network_name: string
+  standard: string | null
+  address: string
+  /** Empty = every currency enabled on the network. */
+  currencies: Currency[]
+  label: string | null
+  priority: number
+  is_enabled: boolean
+  status: ReceivingAddressStatus
+  lease: {
+    leased_until: string | null
+    active: boolean
+    invoice: { id: string; external_id: string | null; status: string; expires_at: string | null } | null
+    merchant: MerchantRef | null
+  } | null
+  invoices_count: number
+  /** Decimal strings keyed by currency — never parsed into floats. */
+  received: Record<string, string>
+  last_leased_at: string | null
+  explorer_url: string | null
+  created_at: string | null
+}
 
 /** The most recent address derived from a network's key. */
 export interface WalletLastAddress {
@@ -197,6 +229,8 @@ export interface WalletItem {
   xpub_set_at: string | null
   xpub_set_by: WalletActor | null
   next_index: number
+  /** Enabled static receiving addresses on this network (Admin → Addresses). */
+  receiving_addresses: number
   addresses_issued: number
   last_address: WalletLastAddress | null
   /** Decimal strings keyed by currency — never parsed into floats. */

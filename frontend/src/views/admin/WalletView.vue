@@ -54,6 +54,11 @@ const SOURCE_META: Record<WalletSource, { label: string; wrap: string; dot: stri
     wrap: 'border-primary/25 bg-primary-soft text-primary-hover',
     dot: 'bg-primary',
   },
+  addresses: {
+    label: 'Static addresses only',
+    wrap: 'border-primary/25 bg-primary-soft text-primary-hover',
+    dot: 'bg-primary',
+  },
   none: {
     label: 'Not configured',
     wrap: 'border-danger/25 bg-danger-soft text-danger',
@@ -533,6 +538,15 @@ onMounted(async () => {
                 <dd class="mono mt-0.5 truncate text-text">
                   {{ wallet.addresses_issued }}
                   <span class="text-muted">· next index {{ wallet.next_index }}</span>
+                </dd>
+              </div>
+              <div class="col-span-2 min-w-0">
+                <dt class="text-muted">Static addresses</dt>
+                <dd class="mt-0.5 truncate text-text">
+                  <RouterLink to="/admin/addresses" class="link">
+                    {{ wallet.receiving_addresses }} enabled
+                  </RouterLink>
+                  <span class="text-muted">· tried before the key when an invoice needs an address</span>
                 </dd>
               </div>
               <div class="min-w-0 text-right">

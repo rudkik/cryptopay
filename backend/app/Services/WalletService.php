@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Enums\Currency;
 use App\Enums\NetworkCode;
 use App\Exceptions\WatcherUnavailableException;
+use App\Models\ReceivingAddress;
 use App\Models\User;
 use App\Models\Wallet;
 use Illuminate\Support\Facades\Cache;
@@ -18,7 +20,10 @@ use Throwable;
  * addresses are derived from (SPEC §3, §6.4).
  *
  * Resolution order for a network:
- *   1. `wallets.xpub` — set by an admin on the Wallet page, wins;
+ *   0. the operator's list of static receiving addresses (`receiving_addresses`,
+ *      admin Addresses page) — an enabled one that accepts the currency is
+ *      leased to the invoice (AddressService), no derivation involved;
+ *   1. `wallets.xpub` — set by an admin on the Wallet page;
  *   2. the watcher's own `EVM_XPUB` / `TRON_XPUB`, reported by `/health` as
  *      `derivation.evm` / `derivation.tron` — the fallback;
  *   3. nothing — the network cannot hand out an address and is hidden from
@@ -58,32 +63,67 @@ class WalletService
         ]);
     }
 
-    /** 'database' | 'env' | 'none' — where this network's xpub comes from. */
+    /**
+     * 'database' | 'env' | 'addresses' | 'none' — where this network's xpub
+     * comes from, or 'addresses' when it has no key but does have at least one
+     * enabled static receiving address (which is enough to take payments).
+     */
     public function source(string $networkCode): string
     {
         if (Wallet::query()->where('network_code', $networkCode)->whereNotNull('xpub')->exists()) {
             return 'database';
         }
 
-        return $this->watcherHasEnvXpub($networkCode) ? 'env' : 'none';
+        if ($this->watcherHasEnvXpub($networkCode)) {
+            return 'env';
+        }
+
+        return $this->hasReceivingAddress($networkCode) ? 'addresses' : 'none';
     }
 
-    /** Can this network hand out a deposit address right now? Cached 30s. */
-    public function isConfigured(string $networkCode): bool
+    /** Does the network have an xpub to derive fresh addresses from (DB or env)? */
+    public function hasXpub(string $networkCode): bool
     {
-        $cached = Cache::get(self::CONFIGURED_KEY.$networkCode);
+        return in_array($this->source($networkCode), ['database', 'env'], true);
+    }
+
+    /**
+     * Is there an enabled static receiving address on the network — for the
+     * given currency, or for anything at all when `$currency` is null?
+     */
+    public function hasReceivingAddress(string $networkCode, ?string $currency = null): bool
+    {
+        $rows = ReceivingAddress::query()
+            ->where('network_code', $networkCode)
+            ->where('is_enabled', true)
+            ->get(['currencies']);
+
+        if ($currency === null) {
+            return $rows->isNotEmpty();
+        }
+
+        return $rows->contains(fn (ReceivingAddress $row) => $row->accepts($currency));
+    }
+
+    /**
+     * Can this network hand out a deposit address right now — for `$currency`
+     * specifically, when given? Cached 30s per (network, currency).
+     *
+     * A static address list is enough on its own; an xpub (DB or watcher env)
+     * covers every currency of the network at once.
+     */
+    public function isConfigured(string $networkCode, ?string $currency = null): bool
+    {
+        $key = self::CONFIGURED_KEY.$networkCode.($currency === null ? '' : ':'.$currency);
+        $cached = Cache::get($key);
 
         if (is_bool($cached)) {
             return $cached;
         }
 
-        $configured = $this->source($networkCode) !== 'none';
+        $configured = $this->hasReceivingAddress($networkCode, $currency) || $this->hasXpub($networkCode);
 
-        Cache::put(
-            self::CONFIGURED_KEY.$networkCode,
-            $configured,
-            $configured ? self::CACHE_TTL : self::FAILURE_TTL,
-        );
+        Cache::put($key, $configured, $configured ? self::CACHE_TTL : self::FAILURE_TTL);
 
         return $configured;
     }
@@ -251,7 +291,7 @@ class WalletService
     public function forget(?string $networkCode = null): void
     {
         if ($networkCode !== null) {
-            Cache::forget(self::CONFIGURED_KEY.$networkCode);
+            $this->forgetNetwork($networkCode);
 
             return;
         }
@@ -259,7 +299,16 @@ class WalletService
         Cache::forget(self::DERIVATION_KEY);
 
         foreach (NetworkCode::cases() as $case) {
-            Cache::forget(self::CONFIGURED_KEY.$case->value);
+            $this->forgetNetwork($case->value);
+        }
+    }
+
+    private function forgetNetwork(string $networkCode): void
+    {
+        Cache::forget(self::CONFIGURED_KEY.$networkCode);
+
+        foreach (Currency::cases() as $currency) {
+            Cache::forget(self::CONFIGURED_KEY.$networkCode.':'.$currency->value);
         }
     }
 

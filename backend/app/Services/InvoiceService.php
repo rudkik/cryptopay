@@ -39,16 +39,20 @@ class InvoiceService
         $currency = $data['currency'] ?? null;
 
         $depositAddress = null;
+        $expiresIn = (int) ($data['expires_in'] ?? 3600);
 
         if ($networkCode !== null && $currency !== null) {
             $this->assertPairAvailable($networkCode, $currency);
 
-            // Allocated outside the invoice transaction: it performs an HTTP call to
-            // the watcher and holds a row lock on `wallets` for its duration.
-            $depositAddress = $this->addresses->allocate($networkCode, $merchant);
+            // Allocated outside the invoice transaction: it may perform an HTTP
+            // call to the watcher and holds row locks for its duration.
+            $depositAddress = $this->addresses->allocate(
+                $networkCode,
+                $merchant,
+                $currency,
+                $this->leaseSeconds($expiresIn),
+            );
         }
-
-        $expiresIn = (int) ($data['expires_in'] ?? 3600);
 
         return DB::transaction(function () use ($merchant, $data, $type, $depositAddress, $networkCode, $currency, $expiresIn) {
             $invoice = Invoice::create([
@@ -71,7 +75,8 @@ class InvoiceService
                 'expires_at' => now()->addSeconds($expiresIn),
             ]);
 
-            // The address belongs to this invoice forever; it is never reused.
+            // A derived address belongs to this invoice forever; a leased
+            // static one belongs to it until the lease runs out.
             $depositAddress?->forceFill(['invoice_id' => $invoice->id])->save();
 
             $invoice->setRelation('depositAddress', $depositAddress);
@@ -109,7 +114,12 @@ class InvoiceService
 
             $locked->loadMissing('merchant');
 
-            $depositAddress = $this->addresses->allocate($networkCode, $locked->merchant);
+            $depositAddress = $this->addresses->allocate(
+                $networkCode,
+                $locked->merchant,
+                $currency,
+                $this->leaseSeconds(max(0, now()->diffInSeconds($locked->expires_at, false))),
+            );
 
             $locked->forceFill([
                 'currency' => $currency,
@@ -117,7 +127,8 @@ class InvoiceService
                 'deposit_address_id' => $depositAddress->id,
             ])->save();
 
-            // The address belongs to this invoice forever; it is never reused.
+            // A derived address belongs to this invoice forever; a leased
+            // static one belongs to it until the lease runs out.
             $depositAddress->forceFill(['invoice_id' => $locked->id])->save();
 
             $locked->setRelation('depositAddress', $depositAddress);
@@ -131,6 +142,15 @@ class InvoiceService
         }
 
         return $selected;
+    }
+
+    /**
+     * How long a static receiving address is reserved for an invoice: its
+     * remaining lifetime plus a grace period for payments that land late.
+     */
+    private function leaseSeconds(int $lifetime): int
+    {
+        return $lifetime + (int) config('services.wallet.lease_grace', 1800);
     }
 
     /** The network is live and the currency actually trades on it (SPEC §2). */
@@ -202,6 +222,9 @@ class InvoiceService
             }
 
             $invoice->forceFill(['status' => InvoiceStatus::Cancelled->value])->save();
+
+            // A leased static address goes back to the pool right away.
+            $this->addresses->release($invoice);
         });
 
         // Cancelling is the one status change that does not go through

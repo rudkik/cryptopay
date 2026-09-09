@@ -103,11 +103,14 @@ class NetworkRegistry
                 continue;
             }
 
-            if (! $wallets->isConfigured($network->code)) {
-                continue;
-            }
-
             foreach ($contracts->get($network->code, collect()) as $contract) {
+                // Either a static receiving address accepts this currency or
+                // the network has an xpub to derive from; otherwise the pair
+                // would only be a dead end at select time.
+                if (! $wallets->isConfigured($network->code, $contract->symbol)) {
+                    continue;
+                }
+
                 $this->networks[$network->code] = $network;
                 $this->contracts[$network->code.'/'.$contract->symbol] = $contract;
 

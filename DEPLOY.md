@@ -112,8 +112,38 @@ make pull-up                  # docker compose pull + up без сборки, ~1
 
 ## 5. Кошелёк: куда приходят деньги
 
+Есть два способа, их можно совмещать. Приватных ключей в системе нет ни в одном из них.
+
+### 5а. Список своих адресов (проще всего)
+
+Админка → **Addresses** → «Add address». Для каждого адреса указываете:
+
+| Поле | Что значит |
+|------|-----------|
+| Network | сеть адреса: Ethereum, BNB Smart Chain или Tron. Формат проверяется (`0x…` 40 hex для EVM, `T…` 34 символа для Tron) |
+| Address | адрес из вашего кошелька (Trust Wallet, Ledger, биржевой депозит и т.п.) |
+| Accepts | какие монеты на него принимать: все, что включены на сети, или только выбранные (например USDT) |
+| Priority | чем меньше число, тем раньше адрес берётся; при равном приоритете адреса чередуются |
+| Enabled | выключенный адрес новым счетам не выдаётся, но история и мониторинг остаются |
+
+Как выбирается адрес для счёта: берётся сеть и монета счёта → из списка отбираются включённые адреса этой
+сети, принимающие эту монету → из них первый **свободный** (не занятый другим открытым счётом) по приоритету
+и давности использования. Адрес закрепляется за счётом на время его жизни плюс `ADDRESS_LEASE_GRACE_SECONDS`
+(по умолчанию 30 минут), после чего снова свободен. Отмена счёта освобождает адрес сразу.
+
+Пока адрес занят, второй счёт на ту же пару сеть/монета получит следующий адрес из списка; если свободных
+нет и xpub не задан — API ответит `503 no_free_address`. Поэтому на каждую пару сеть/монета держите столько
+адресов, сколько счетов одновременно бывает открыто (для старта хватит 2–3 на сеть). Занятость видна в колонке
+Status (`free` / `busy` со ссылкой на счёт).
+
+Сеть и монета появляются в выборе на странице оплаты, как только для них есть хотя бы один включённый адрес
+(или xpub из 5б).
+
+### 5б. xpub: новый адрес на каждый счёт (необязательно)
+
 Сервис хранит только расширенные публичные ключи (xpub). Деньги приходят на адреса, выведенные из вашего
-мнемоника, и остаются под вашим контролем; приватных ключей в системе нет.
+мнемоника, и остаются под вашим контролем. Если задан и список адресов, и xpub, список используется первым,
+а xpub — когда все адреса списка заняты.
 
 Вариант А, свой существующий кошелёк (рекомендуется): экспортируйте account-level xpub
 (путь `m/44'/60'/0'` для Ethereum/BSC и `m/44'/195'/0'` для Tron) из Ledger, Trust Wallet или другого BIP-44 кошелька.
@@ -134,13 +164,16 @@ make keys          # печатает мнемоник, EVM_XPUB, TRON_XPUB и �
 ## 6. HTTPS и домен
 
 ```bash
-# в .env: DOMAIN, ACME_EMAIL, APP_BIND=127.0.0.1, APP_URL=https://...
-docker compose --profile tls up -d
-docker compose logs -f caddy      # выпуск сертификата Let's Encrypt
+make domain DOMAIN=pay.example.com EMAIL=admin@example.com
+# записывает в .env: DOMAIN, ACME_EMAIL, APP_URL=https://…, APP_BIND=127.0.0.1, COMPOSE_PROFILES=tls
+make pull-up                      # или make up — с профилем tls поднимается и caddy
+make caddy-logs                   # выпуск сертификата Let's Encrypt
 ```
 
 Caddy слушает 80/443, сам выпускает и продлевает сертификат, включает HTTP→HTTPS и HSTS. nginx при этом
-доступен только с localhost. Переезд с IP на домен позже описан в README, раздел «Переезд с IP на домен и HTTPS».
+доступен только с localhost. `make check-env` следит, чтобы профиль `tls`, `DOMAIN`, `ACME_EMAIL` и
+`https://` в `APP_URL` были заданы согласованно. Переезд с IP на домен позже описан в README, раздел
+«Переезд с IP на домен и HTTPS».
 
 Доступ к админке рекомендуется дополнительно ограничить (VPN или allowlist IP в Caddyfile), публичными
 должны оставаться только `/pay/*`, `/api/public/*`, `/api/v1/*`, `/docs`, `/swagger`.
@@ -163,10 +196,10 @@ Caddy слушает 80/443, сам выпускает и продлевает �
 
 ```bash
 cd /opt/cryptopay
-git pull
-make up                      # пересборка изменившихся образов; миграции применит app при старте
-docker compose ps
+make deploy                  # git pull + make pull-up (или make up, если IMAGE_PREFIX не задан) + ps
 ```
+
+Миграции применяет контейнер `app` при старте. Все цели: `make help`.
 
 Данные живут в томах и при обновлении сохраняются: `postgres-data`, `redis-data`, `app-storage`,
 `watcher-data` (состояние сканера), `caddy-data` (сертификаты).
@@ -174,7 +207,7 @@ docker compose ps
 **Бэкапы**
 
 ```bash
-# база (ежедневно по cron)
+# база (ежедневно по cron): make backup → ./backups/cryptopay-<дата>.sql.gz, либо вручную:
 docker compose exec -T postgres pg_dump -U cryptopay cryptopay | gzip > /backup/cryptopay-$(date +%F).sql.gz
 # восстановление
 gunzip -c /backup/cryptopay-2026-09-05.sql.gz | docker compose exec -T postgres psql -U cryptopay cryptopay
@@ -195,7 +228,9 @@ gunzip -c /backup/cryptopay-2026-09-05.sql.gz | docker compose exec -T postgres 
 | Симптом | Причина и действие |
 |---------|--------------------|
 | `/api/internal/*` отвечает 503 | `INTERNAL_API_TOKEN` оставлен плейсхолдером: задайте случайный и перезапустите `app`, `queue`, `scheduler`, `watcher` вместе |
-| Счёт не создаётся, ошибка `wallet_not_configured` | не задан xpub для сети: раздел 5 |
+| Счёт не создаётся, ошибка `wallet_not_configured` | для сети нет ни адреса в списке, ни xpub: раздел 5 |
+| Счёт не создаётся, ошибка `no_free_address` | все адреса списка для этой сети/монеты заняты открытыми счетами: добавьте адреса (раздел 5а) или задайте xpub как резерв (5б) |
+| Сертификат не выпускается (`make caddy-logs`) | A-запись домена не указывает на сервер, порты 80/443 закрыты, или `DOMAIN` в `.env` не совпадает с доменом |
 | Сборка идёт десятки минут / падает по памяти | слабый сервер: используйте готовые образы (`make pull-up`, раздел 4a) или swap + `COMPOSE_PARALLEL_LIMIT=1` |
 | `make up` падает на check-env | в `.env` остались значения из примера: `make secrets-prod`, затем проверьте `APP_URL` |
 | Watcher «Degraded», лаг растёт | лимиты публичного RPC/TronGrid: задайте `TRON_API_KEY`, свои RPC; `docker compose logs watcher` |
@@ -218,3 +253,72 @@ make up
 docker compose --profile tls down        # контейнеры; данные в томах остаются
 docker compose down -v                   # ВНИМАНИЕ: удалит базу, состояние watcher и сертификаты
 ```
+
+## 9. Пошагово: ubaduba.top
+
+Сценарий «чистый Ubuntu-сервер, домен ubaduba.top, готовые образы из GHCR». Команды на сервере под пользователем с sudo.
+
+**Шаг 0. DNS.** У регистратора/в панели DNS создайте A-запись `ubaduba.top → <IP сервера>` (и, если хотите, `www`).
+Проверка с любой машины: `dig +short ubaduba.top` должен вернуть IP сервера. Без этого Let's Encrypt не выдаст сертификат.
+
+**Шаг 1. Сервер.**
+
+```bash
+sudo apt-get update && sudo apt-get install -y git make openssl ufw
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER && newgrp docker
+sudo ufw allow OpenSSH && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw --force enable
+# слабый VPS (≤2 ГБ RAM): swap на всякий случай
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+```
+
+**Шаг 2. Код и секреты.**
+
+```bash
+sudo mkdir -p /opt/cryptopay && sudo chown $USER /opt/cryptopay
+git clone git@github.com:rudkik/cryptopay.git /opt/cryptopay    # или https://github.com/rudkik/cryptopay.git
+cd /opt/cryptopay
+make secrets-prod          # APP_KEY, пароли БД/Redis, INTERNAL_API_TOKEN, ADMIN_PASSWORD (печатается один раз — сохраните)
+make domain DOMAIN=ubaduba.top EMAIL=admin@ubaduba.top
+```
+
+Затем в `.env` руками:
+
+```bash
+ADMIN_EMAIL=admin@ubaduba.top
+IMAGE_PREFIX=ghcr.io/rudkik/cryptopay     # готовые образы (раздел 4a); пакеты в GHCR должны быть public,
+IMAGE_TAG=latest                          # иначе перед pull: docker login ghcr.io
+TRON_API_KEY=<ключ с trongrid.io>         # бесплатный; без него Tron сканируется с жёсткими лимитами
+ETH_RPC_URL=... / BSC_RPC_URL=...         # публичные из примера годятся для старта
+```
+
+```bash
+make check-env             # должен сказать OK
+```
+
+**Шаг 3. Запуск.**
+
+```bash
+make pull-up               # скачивает образы и поднимает 8 сервисов (включая caddy)
+docker compose ps          # все Up / healthy
+make caddy-logs            # ждём "certificate obtained successfully" для ubaduba.top
+```
+
+Откройте `https://ubaduba.top/login`: логин `ADMIN_EMAIL`, пароль из вывода `make secrets-prod`.
+
+**Шаг 4. Куда приходят деньги.** Админка → **Addresses** → «Add address»: сеть, ваш адрес, принимаемые монеты
+(раздел 5а). Добавьте по 2–3 адреса на каждую сеть, которую хотите принимать; ненужные сети выключите в **Networks**.
+После этого сеть/монета появляются на странице оплаты.
+
+**Шаг 5. Подключение вашего сайта.** Раздел 7: сервис → API-ключ → webhook secret → SDK. Документация для
+интеграторов: `https://ubaduba.top/docs`, `https://ubaduba.top/swagger`.
+
+**Шаг 6. Эксплуатация.**
+
+```bash
+make deploy                # обновление до свежего main
+make backup                # дамп базы в ./backups
+make logs                  # логи всех сервисов
+```
+
+Сохраните вне сервера: `.env` (в нём `APP_KEY`), дампы из `make backup`, и, если используете xpub, мнемоник.

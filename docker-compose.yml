@@ -49,6 +49,9 @@ x-backend-env: &backend-env
   # /tokens, /token-purchases и /customers/{id}/holdings отвечают 404, пока
   # флаг не включён. На приём платежей не влияет.
   TOKEN_SALE_ENABLED: ${TOKEN_SALE_ENABLED:-false}
+  # Сколько статичный адрес из списка (админка → Addresses) остаётся за счётом
+  # после его истечения, секунды.
+  ADDRESS_LEASE_GRACE_SECONDS: ${ADDRESS_LEASE_GRACE_SECONDS:-1800}
   ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@cryptopay.local}
   ADMIN_PASSWORD: ${ADMIN_PASSWORD:-password}
 

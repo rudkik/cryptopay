@@ -53,6 +53,7 @@ const walletSources = ref<Record<string, WalletSource>>({})
 const WALLET_HINTS: Record<WalletSource, { label: string; dot: string; text: string; title: string }> = {
   database: { label: 'db', dot: 'bg-success', text: 'text-muted', title: 'Deposit wallet: key stored in the database' },
   env: { label: 'env', dot: 'bg-primary', text: 'text-muted', title: 'Deposit wallet: key from the watcher environment' },
+  addresses: { label: 'list', dot: 'bg-primary', text: 'text-muted', title: 'Deposit wallet: static receiving addresses only' },
   none: { label: 'none', dot: 'bg-danger', text: 'text-danger', title: 'No deposit wallet configured for this network' },
 }
 

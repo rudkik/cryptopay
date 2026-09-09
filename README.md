@@ -29,10 +29,19 @@ make up                       # docker compose up -d --build
   (обе страницы открываются **без входа** — ссылку можно давать интеграторам; старые адреса `/admin/docs`
   и `/admin/swagger` редиректят сюда же)
 
-Разделы админки: **Dashboard**, **Invoices**, **Transactions**, **Webhooks**, **Services**, **Wallet**, **Networks**,
+Разделы админки: **Dashboard**, **Invoices**, **Transactions**, **Webhooks**, **Services**, **Wallet**, **Addresses**, **Networks**,
 **Admin users**, **API docs**, **Swagger**. **Service** — это подключённый проект (в API он по-прежнему `merchant`):
 свои API-ключи, webhook URL и балансы. Раздел **Tokens** (продажа токенов) появляется только при
 `TOKEN_SALE_ENABLED=true`.
+
+### Свои адреса вместо xpub
+
+Самый простой способ настроить приём: админка → **Addresses** → добавить адрес, указать его сеть и монеты,
+которые он принимает. Счёт получает первый свободный адрес из списка, подходящий по сети и монете (по
+приоритету, затем по давности использования), и держит его до конца своей жизни плюс
+`ADDRESS_LEASE_GRACE_SECONDS`. Подробнее — [DEPLOY.md, раздел 5а](DEPLOY.md#5а-список-своих-адресов-проще-всего).
+xpub ниже — необязательное дополнение: он даёт новый адрес на каждый счёт и служит резервом, когда все адреса
+списка заняты.
 
 ### Ключи кошелька (xpub)
 
@@ -85,6 +94,7 @@ Env‑переменные `EVM_XPUB` / `TRON_XPUB` в `.env` остаются *
 | `SIMULATION_ENABLED` | `false` | кнопка «Simulate payment» в админке (демо/QA) |
 | `TOKEN_SALE_ENABLED` | `false` | модуль продажи токенов; при `false` все его маршруты отдают `404` |
 | `EVM_XPUB` / `TRON_XPUB` | пусто | fallback для xpub, если ключ не задан в админке (страница Wallet) |
+| `ADDRESS_LEASE_GRACE_SECONDS` | `1800` | сколько статичный адрес (Addresses) остаётся за счётом после его истечения |
 | `ETH_RPC_URL` / `BSC_RPC_URL` / `TRON_API_URL` / `TRON_API_KEY` | публичные ноды | доступ к сетям; для Tron настоятельно нужен свой ключ |
 | `WATCHER_ENABLED`, `EVM_BATCH_BLOCKS`, `POLL_INTERVAL_MS`, `LOG_LEVEL` | `true`, `20`, `5000`, `info` | поведение watcher'а (см. `watcher/README.md`) |
 
@@ -149,13 +159,10 @@ API-ключ идёт в открытом виде — используйте IP
 Переключение на домен с сертификатом Let's Encrypt делается без пересборки:
 
 ```bash
-# .env
-APP_URL=https://pay.example.com
-DOMAIN=pay.example.com
-ACME_EMAIL=admin@example.com
-APP_BIND=127.0.0.1           # nginx больше не публикуется наружу, снаружи только caddy :80/:443
-
-docker compose --profile tls up -d
+make domain DOMAIN=pay.example.com EMAIL=admin@example.com
+# пишет в .env: APP_URL=https://…, DOMAIN, ACME_EMAIL, APP_BIND=127.0.0.1 (nginx только на localhost,
+# снаружи caddy :80/:443) и COMPOSE_PROFILES=tls
+make pull-up                 # или make up; caddy поднимается вместе с остальными
 ```
 
 Caddy получит сертификат сам (нужны открытые 80/443 и A-запись домена), включит HTTP→HTTPS и HSTS.

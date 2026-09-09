@@ -39,6 +39,9 @@ const TONES: Record<string, Tone> = {
   healthy: 'success',
   degraded: 'danger',
   disabled: 'muted',
+  // receiving addresses
+  free: 'success',
+  busy: 'warning',
   admin: 'primary',
   viewer: 'muted',
 }

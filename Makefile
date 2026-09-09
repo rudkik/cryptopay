@@ -1,4 +1,4 @@
-.PHONY: up pull-up down build logs keys ps restart shell test check-env secrets secrets-prod
+.PHONY: up pull-up down build logs keys ps restart shell test check-env secrets secrets-prod domain deploy backup caddy-logs help
 
 check-env: ## проверить .env на плейсхолдеры (в APP_ENV != local падает)
 	@./scripts/check-env.sh .env
@@ -8,6 +8,29 @@ secrets: ## заполнить пустые/дефолтные секреты в
 
 secrets-prod: ## то же + APP_ENV=production, APP_DEBUG/SIMULATION/WEBHOOK_ALLOW_PRIVATE=false
 	@./scripts/init-env.sh .env --production
+
+domain: ## включить HTTPS-режим: make domain DOMAIN=pay.example.com EMAIL=admin@example.com
+	@./scripts/set-domain.sh "$(DOMAIN)" "$(EMAIL)" .env
+
+# Полный цикл обновления на сервере: забрать код, обновить образы (готовые из
+# GHCR, если задан IMAGE_PREFIX, иначе сборка на месте), перезапустить, показать
+# состояние. Миграции применяет контейнер app при старте. COMPOSE_PROFILES=tls
+# из .env подхватывается compose'ом сам, так что caddy обновляется вместе со всеми.
+deploy: ## git pull + обновление образов + перезапуск (см. DEPLOY.md)
+	git pull --ff-only
+	@if grep -qE '^IMAGE_PREFIX=.+' .env; then $(MAKE) pull-up; else $(MAKE) up; fi
+	docker compose ps
+
+backup: ## дамп базы в ./backups/cryptopay-<дата>.sql.gz
+	@mkdir -p backups
+	@docker compose exec -T postgres pg_dump -U "$$(sed -n 's/^DB_USERNAME=//p' .env)" "$$(sed -n 's/^DB_DATABASE=//p' .env)" \
+	  | gzip > "backups/cryptopay-$$(date +%F-%H%M).sql.gz" && ls -la backups | tail -1
+
+caddy-logs: ## логи TLS-терминатора (выпуск сертификата)
+	docker compose logs -f --tail=100 caddy
+
+help: ## список целей
+	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 pull-up: ## запуск из готовых образов GHCR без сборки (IMAGE_PREFIX/IMAGE_TAG в .env)
 	@[ -f .env ] || cp .env.example .env

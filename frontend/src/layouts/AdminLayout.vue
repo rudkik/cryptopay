@@ -15,6 +15,7 @@ import {
   Plug,
   Users,
   Wallet,
+  ListChecks,
   Webhook,
   X,
 } from 'lucide-vue-next'
@@ -68,6 +69,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: 'System',
     items: [
       { label: 'Wallet', to: '/admin/wallet', icon: Wallet },
+      { label: 'Addresses', to: '/admin/addresses', icon: ListChecks },
       { label: 'Networks', to: '/admin/networks', icon: Network },
       { label: 'Admin users', to: '/admin/users', icon: Users, adminOnly: true },
       { label: 'API docs', to: '/docs', icon: BookOpen },

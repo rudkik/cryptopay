@@ -112,6 +112,9 @@ Route::prefix('admin')->group(function () {
 
         Route::get('watcher/health', [Admin\WatcherController::class, 'health']);
 
+        Route::get('receiving-addresses', [Admin\ReceivingAddressController::class, 'index']);
+        Route::get('receiving-addresses/{receivingAddress}', [Admin\ReceivingAddressController::class, 'show']);
+
         // Mutating endpoints require role=admin; viewers keep read-only access.
         Route::middleware('admin')->group(function () {
             Route::post('merchants', [Admin\MerchantController::class, 'store']);
@@ -128,6 +131,11 @@ Route::prefix('admin')->group(function () {
             Route::post('wallets/{network}/preview', [Admin\WalletController::class, 'preview']);
             Route::put('wallets/{network}', [Admin\WalletController::class, 'update']);
             Route::delete('wallets/{network}/xpub', [Admin\WalletController::class, 'destroyXpub']);
+
+            // The static receiving-address list (Admin → Addresses).
+            Route::post('receiving-addresses', [Admin\ReceivingAddressController::class, 'store']);
+            Route::put('receiving-addresses/{receivingAddress}', [Admin\ReceivingAddressController::class, 'update']);
+            Route::delete('receiving-addresses/{receivingAddress}', [Admin\ReceivingAddressController::class, 'destroy']);
 
             Route::put('networks/{code}', [Admin\NetworkController::class, 'update']);
             Route::put('networks/{code}/tokens/{symbol}', [Admin\NetworkController::class, 'updateToken']);

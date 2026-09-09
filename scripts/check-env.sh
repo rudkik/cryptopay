@@ -67,9 +67,24 @@ case "$(get WEBHOOK_ALLOW_PRIVATE)" in
 esac
 
 if [ -z "$(get EVM_XPUB)" ] && [ -z "$(get TRON_XPUB)" ]; then
-    # Не ошибка: кошелёк задаётся на странице Wallet в админке (DEPLOY.md §5).
-    echo "  note    EVM_XPUB/TRON_XPUB не заданы в .env — задайте xpub в админке (Wallet) или через make keys"
+    # Не ошибка: адреса задаются в админке (Addresses), xpub — там же на странице Wallet (DEPLOY.md §5).
+    echo "  note    EVM_XPUB/TRON_XPUB не заданы в .env — добавьте адреса в админке (Addresses) или xpub (Wallet / make keys)"
 fi
+
+# Режим TLS: профиль без домена оставит caddy без сертификата, домен без профиля — nginx только на localhost.
+case ",$(get COMPOSE_PROFILES)," in
+    *,tls,*)
+        [ -n "$(get DOMAIN)" ] || fail "COMPOSE_PROFILES=tls, но DOMAIN пуст (make domain DOMAIN=… EMAIL=…)"
+        [ -n "$(get ACME_EMAIL)" ] || fail "COMPOSE_PROFILES=tls, но ACME_EMAIL пуст — Let's Encrypt требует e-mail"
+        case "$(get APP_URL)" in
+            https://*) ;;
+            *) fail "COMPOSE_PROFILES=tls, но APP_URL не https:// — ссылки на оплату и вебхуки уйдут с неверной схемой" ;;
+        esac ;;
+    *)
+        if [ "$(get APP_BIND)" = "127.0.0.1" ]; then
+            fail "APP_BIND=127.0.0.1 без профиля tls — снаружи сервис недоступен (COMPOSE_PROFILES=tls или уберите APP_BIND)"
+        fi ;;
+esac
 
 if [ "$problems" -eq 0 ]; then
     echo "check-env: OK"

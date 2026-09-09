@@ -3,9 +3,10 @@
 namespace App\Exceptions;
 
 /**
- * No xpub is available for a network — neither in `wallets.xpub` nor in the
- * watcher's env (SPEC §3). Deposit addresses cannot be derived, so the money
- * would have nowhere to go; refusing is the only safe answer.
+ * Nothing can hand out an address for a network: no static receiving address
+ * accepts the currency, and no xpub exists in `wallets.xpub` or the watcher's
+ * env (SPEC §3). The money would have nowhere to go; refusing is the only safe
+ * answer.
  */
 class WalletNotConfiguredException extends ApiException
 {
@@ -13,8 +14,9 @@ class WalletNotConfiguredException extends ApiException
     {
         parent::__construct(
             'wallet_not_configured',
-            "No deposit wallet is configured for [{$networkCode}], so an address cannot be derived. "
-                .'An administrator must set an xpub for this network on the admin Wallet page (Admin → Wallet).',
+            "No deposit wallet is configured for [{$networkCode}], so the invoice has nowhere to be paid to. "
+                .'An administrator must add a receiving address for this network and currency (Admin → Addresses) '
+                .'or set an xpub for the network (Admin → Wallet).',
             503,
             ['network' => [$networkCode]],
         );
