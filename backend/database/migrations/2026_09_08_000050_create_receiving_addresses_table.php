@@ -25,7 +25,7 @@ return new class extends Migration
             $table->unsignedSmallInteger('priority')->default(100);
             $table->boolean('is_enabled')->default(true);
             $table->timestamp('last_leased_at')->nullable();
-            $table->foreignUuid('created_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
 
             $table->unique(['network_code', 'address']);
