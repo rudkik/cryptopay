@@ -90,5 +90,21 @@ else
     php artisan optimize --no-ansi
 fi
 
+# ---------------------------------------------------------------------------
+# 5. Scheduler: drop stale mutexes
+# ---------------------------------------------------------------------------
+# withoutOverlapping() keeps a mutex in Redis while a task runs and releases it
+# when the task finishes. A scheduler that is stopped mid-run (every deploy
+# recreates this container) takes its background tasks down with it and never
+# releases them; until the mutex expires, the task is skipped *silently*
+# (invoices:expire and webhooks:retry vanish from the log). There is only ever
+# one scheduler, so anything left behind at start-up is stale by definition.
+case "$*" in
+    *schedule:work*)
+        log "Clearing stale scheduler mutexes ..."
+        php artisan schedule:clear-cache --no-ansi || log "WARNING: schedule:clear-cache failed; continuing."
+        ;;
+esac
+
 log "Starting: $*"
 exec "$@"

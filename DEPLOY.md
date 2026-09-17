@@ -250,6 +250,7 @@ gunzip -c /backup/cryptopay-2026-09-05.sql.gz | docker compose exec -T postgres 
 | Сборка идёт десятки минут / падает по памяти | слабый сервер: используйте готовые образы (`make pull-up`, раздел 4a) или swap + `COMPOSE_PARALLEL_LIMIT=1` |
 | `make up` падает на check-env | в `.env` остались значения из примера: `make secrets-prod`, затем проверьте `APP_URL` |
 | Watcher «Degraded», лаг растёт | лимиты публичного RPC/TronGrid: задайте `TRON_API_KEY`, свои RPC; `docker compose logs watcher` |
+| Счета не переходят в `expired`, в логе scheduler только `networks:health` | застрявший mutex `withoutOverlapping` в Redis после убитого scheduler'а: `docker compose exec app php artisan schedule:clear-cache`, затем `docker compose restart scheduler`. С текущего образа scheduler чистит их сам при старте |
 | Вебхуки `failed` | ваш сервис отвечает не 2xx, либо адрес приватный при `WEBHOOK_ALLOW_PRIVATE=false`; кнопка Retry в админке |
 | После смены `.env` ничего не изменилось | переменные читаются при старте: `docker compose up -d` (пересоздаст изменившиеся контейнеры) |
 
