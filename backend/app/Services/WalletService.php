@@ -189,7 +189,29 @@ class WalletService
      */
     public function preview(string $networkCode, string $xpub, int $count = 5): array
     {
+        return $this->deriveBatch($networkCode, 0, $count, $xpub);
+    }
+
+    /**
+     * Derive `$count` addresses starting at `$from` via the watcher
+     * (`POST /addresses/derive-batch`, SPEC §6.6). With `$xpub` the key is
+     * sent in the body and wins; without it the watcher uses its env key,
+     * which is what `cryptopay:seed-addresses` needs for a network whose
+     * `source` is `env`.
+     *
+     * @return list<array{index: int, path: string, address: string}>
+     *
+     * @throws ValidationException when the watcher rejects the key
+     */
+    public function deriveBatch(string $networkCode, int $from, int $count, ?string $xpub = null): array
+    {
         $url = rtrim((string) config('services.watcher.url'), '/').'/addresses/derive-batch';
+
+        $payload = ['network' => $networkCode, 'from' => $from, 'count' => $count];
+
+        if (is_string($xpub) && $xpub !== '') {
+            $payload['xpub'] = $xpub;
+        }
 
         try {
             $response = Http::withHeaders([
@@ -197,15 +219,10 @@ class WalletService
                 'Accept' => 'application/json',
             ])
                 ->timeout((int) config('services.watcher.timeout', 10))
-                ->post($url, [
-                    'network' => $networkCode,
-                    'from' => 0,
-                    'count' => $count,
-                    'xpub' => $xpub,
-                ]);
+                ->post($url, $payload);
         } catch (Throwable $e) {
             // The message can carry the request body on some transports.
-            Log::error('Watcher xpub preview failed', ['network' => $networkCode]);
+            Log::error('Watcher derive-batch failed', ['network' => $networkCode, 'from' => $from, 'count' => $count]);
 
             throw new WatcherUnavailableException;
         }
@@ -217,7 +234,7 @@ class WalletService
         }
 
         if (! $response->successful()) {
-            Log::error('Watcher xpub preview returned an error', [
+            Log::error('Watcher derive-batch returned an error', [
                 'network' => $networkCode,
                 'status' => $response->status(),
             ]);

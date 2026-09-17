@@ -1,4 +1,4 @@
-.PHONY: up pull-up down build logs keys ps restart shell test check-env secrets secrets-prod domain deploy backup caddy-logs help
+.PHONY: up pull-up down build logs keys seed-addresses ps restart shell test check-env secrets secrets-prod domain deploy backup caddy-logs help
 
 check-env: ## проверить .env на плейсхолдеры (в APP_ENV != local падает)
 	@./scripts/check-env.sh .env
@@ -74,6 +74,13 @@ shell:
 
 keys: ## generate mnemonic + xpubs for the watcher
 	docker compose run --rm --no-deps watcher npm run keygen
+
+# Первые N HD-адресов каждой сети (из xpub в админке или env watcher'а) в список
+# Addresses: обычные счета крутятся по ним, новые HD-адреса выдаются только на
+# пике. Повторный запуск безопасен. Только посмотреть: make seed-addresses DRY=1
+N ?= 10
+seed-addresses: ## добавить первые N HD-адресов в Addresses (make seed-addresses N=10 [DRY=1])
+	docker compose exec app php artisan cryptopay:seed-addresses --count=$(N) $(if $(DRY),--dry-run,)
 
 # Тесты нельзя запускать в работающем контейнере app: боевой образ собран
 # `composer install --no-dev` (в нём нет phpunit) и без каталога tests/
