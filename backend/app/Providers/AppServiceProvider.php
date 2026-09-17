@@ -6,7 +6,11 @@ use App\Exceptions\ErrorResponse;
 use App\Models\ApiKey;
 use App\Support\NetworkRegistry;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Events\ScheduledTaskSkipped;
+use Illuminate\Console\Scheduling\Event as ScheduledEvent;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -28,6 +32,27 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureRouteBindings();
         $this->configureRateLimiting();
+        $this->logSkippedScheduledTasks();
+    }
+
+    /**
+     * schedule:run says nothing when a task is skipped, and the usual reason —
+     * a withoutOverlapping() mutex left behind by a scheduler that died
+     * mid-run — makes invoices:expire and webhooks:retry vanish from the log
+     * for up to their lock expiry. A warning line turns that silence into
+     * something grep-able in the scheduler container's output.
+     */
+    private function logSkippedScheduledTasks(): void
+    {
+        Event::listen(ScheduledTaskSkipped::class, function (ScheduledTaskSkipped $skipped) {
+            $task = $skipped->task;
+
+            $name = $task instanceof ScheduledEvent
+                ? trim(preg_replace("/^'[^']*php[^']*' 'artisan' /", '', $task->command ?? $task->description ?? ''))
+                : 'unknown';
+
+            Log::warning("Scheduled task skipped: [{$name}] — another run still holds its mutex, or a filter rejected it.");
+        });
     }
 
     /**
