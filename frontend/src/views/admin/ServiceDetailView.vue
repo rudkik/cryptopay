@@ -52,7 +52,16 @@ const apiKeys = computed(() => service.value?.api_keys ?? [])
 const activeKeys = computed(() => apiKeys.value.filter((key) => !key.revoked_at))
 
 /* ---------------------------------------------------------------- settings */
-const settingsForm = reactive({ name: '', email: '', webhook_url: '', is_active: true })
+const DEFAULT_TTL_MINUTES = 60
+
+/** `invoice_ttl_minutes` is what the operator types; the API stores seconds. */
+const settingsForm = reactive({
+  name: '',
+  email: '',
+  webhook_url: '',
+  is_active: true,
+  invoice_ttl_minutes: DEFAULT_TTL_MINUTES,
+})
 const settingsErrors = ref<Record<string, string>>({})
 const savingSettings = ref(false)
 
@@ -61,6 +70,12 @@ function syncForm(source: Merchant): void {
   settingsForm.email = source.email ?? ''
   settingsForm.webhook_url = source.webhook_url ?? ''
   settingsForm.is_active = source.is_active
+  settingsForm.invoice_ttl_minutes = ttlMinutes(source)
+}
+
+function ttlMinutes(source: Merchant): number {
+  const seconds = Number(source.invoice_ttl ?? source.settings?.invoice_ttl ?? DEFAULT_TTL_MINUTES * 60)
+  return Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds / 60) : DEFAULT_TTL_MINUTES
 }
 
 const settingsDirty = computed(() => {
@@ -70,7 +85,8 @@ const settingsDirty = computed(() => {
     settingsForm.name !== source.name ||
     settingsForm.email !== (source.email ?? '') ||
     settingsForm.webhook_url !== (source.webhook_url ?? '') ||
-    settingsForm.is_active !== source.is_active
+    settingsForm.is_active !== source.is_active ||
+    settingsForm.invoice_ttl_minutes !== ttlMinutes(source)
   )
 })
 
@@ -83,6 +99,11 @@ async function saveSettings(): Promise<void> {
       email: settingsForm.email.trim() || null,
       webhook_url: settingsForm.webhook_url.trim() || null,
       is_active: settingsForm.is_active,
+      // `settings` is replaced as a whole by the API, so the other keys ride along.
+      settings: {
+        ...(service.value?.settings ?? {}),
+        invoice_ttl: Math.round(Number(settingsForm.invoice_ttl_minutes) * 60),
+      },
     })
     if (service.value) syncForm(service.value)
     toast.success('Service updated')
@@ -305,7 +326,7 @@ onMounted(async () => {
 
         <section class="card p-5">
           <h2 class="text-sm font-semibold">Settings</h2>
-          <p class="mt-0.5 text-xs text-muted">Webhook endpoint and account status.</p>
+          <p class="mt-0.5 text-xs text-muted">Webhook endpoint, payment window and account status.</p>
 
           <form class="mt-4 space-y-4" novalidate @submit.prevent="saveSettings">
             <!-- Read-only for viewers: the API rejects their writes with 403. -->
@@ -344,6 +365,25 @@ onMounted(async () => {
               />
               <p v-if="settingsErrors.webhook_url" class="error-text">{{ settingsErrors.webhook_url }}</p>
               <p v-else class="hint">Events are signed with the service webhook secret.</p>
+            </div>
+            <div>
+              <label for="s-ttl" class="label">Payment window (minutes)</label>
+              <input
+                id="s-ttl"
+                v-model.number="settingsForm.invoice_ttl_minutes"
+                type="number"
+                min="1"
+                max="1440"
+                step="1"
+                class="input w-40"
+                :class="settingsErrors['settings.invoice_ttl'] ? 'input-error' : ''"
+              />
+              <p v-if="settingsErrors['settings.invoice_ttl']" class="error-text">
+                {{ settingsErrors['settings.invoice_ttl'] }}
+              </p>
+              <p v-else class="hint">
+                How long a new invoice stays payable, 1–1440 minutes. An explicit <code class="mono">expires_in</code> in the API call overrides it.
+              </p>
             </div>
             <label class="flex cursor-pointer items-center gap-2.5">
               <input

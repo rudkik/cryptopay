@@ -109,6 +109,8 @@ export interface Merchant {
   webhook_url: string | null
   is_active: boolean
   settings: MerchantSettings | null
+  /** Effective payment window in seconds (setting or the one-hour default). */
+  invoice_ttl?: number
   created_at: string
   updated_at?: string
   /** Aggregates returned by the admin list/detail endpoints. */
@@ -119,6 +121,8 @@ export interface Merchant {
 
 export interface MerchantSettings {
   underpayment_tolerance?: number | string
+  /** Seconds a new invoice stays payable when the API omits `expires_in`. */
+  invoice_ttl?: number
   [key: string]: unknown
 }
 

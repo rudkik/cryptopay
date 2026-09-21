@@ -21,6 +21,7 @@ class MerchantResource extends JsonResource
             'is_active' => $this->is_active,
             'settings' => (object) ($this->settings ?? []),
             'underpayment_tolerance' => $this->underpaymentTolerance(),
+            'invoice_ttl' => $this->invoiceTtl(),
             'created_at' => $this->created_at?->toIso8601String(),
             // Closure form: passing a MissingValue straight into ::collection()
             // blows up before the resource can filter it out.

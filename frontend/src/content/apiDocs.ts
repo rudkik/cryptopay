@@ -238,7 +238,7 @@ export const API_DOCS: DocGroup[] = [
               ['metadata', 'object', 'Returned untouched in webhooks'],
               ['success_url', 'string', 'Redirect target after payment'],
               ['cancel_url', 'string', 'Redirect target on cancel'],
-              ['expires_in', 'integer', 'Seconds — default 3600, max 86400'],
+              ['expires_in', 'integer', 'Seconds, 60–86400 — default is the service\'s payment window (admin → Services), 3600 unless changed'],
             ],
           },
           {

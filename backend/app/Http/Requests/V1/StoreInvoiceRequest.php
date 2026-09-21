@@ -52,10 +52,14 @@ class StoreInvoiceRequest extends FormRequest
         }
     }
 
+    /**
+     * `expires_in` is left null when omitted: the default is the merchant's
+     * own payment window (Merchant::invoiceTtl()), applied by the service.
+     */
     public function validated($key = null, $default = null): array
     {
         $data = parent::validated();
-        $data['expires_in'] ??= 3600;
+        $data['expires_in'] = isset($data['expires_in']) ? (int) $data['expires_in'] : null;
 
         return $data;
     }

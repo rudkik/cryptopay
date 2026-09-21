@@ -60,7 +60,7 @@ class TokenPurchaseService
             'metadata' => $data['metadata'] ?? null,
             'success_url' => $data['success_url'] ?? null,
             'cancel_url' => $data['cancel_url'] ?? null,
-            'expires_in' => $data['expires_in'] ?? 3600,
+            'expires_in' => $data['expires_in'] ?? null,
         ], InvoiceType::TokenPurchase);
 
         $purchase = TokenPurchase::create([

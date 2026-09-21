@@ -35,6 +35,7 @@ import {
   formatDateTime,
   percentOf,
   subtractAmounts,
+  trimAmount,
   truncateMiddle,
 } from '@/utils/format'
 import { CURRENCIES } from '@/utils/options'
@@ -573,6 +574,20 @@ onMounted(async () => {
                 :size="192"
                 :label="`QR code for ${invoice.amount} ${invoice.currency} on ${invoice.network_name}`"
               />
+
+              <div class="w-full">
+                <p class="label mb-1.5">Amount to send</p>
+                <div
+                  class="flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2.5"
+                >
+                  <code class="mono min-w-0 flex-1 break-all text-[12.5px] text-text">
+                    {{ trimAmount(invoice.amount) }}
+                    <span class="text-muted">{{ invoice.currency }}</span>
+                  </code>
+                  <!-- The bare number is what goes on the clipboard: wallets reject "0.1 USDT". -->
+                  <CopyButton :value="trimAmount(invoice.amount)" label="Amount" :size="15" notify />
+                </div>
+              </div>
 
               <div class="w-full">
                 <p class="label mb-1.5">Send to this address</p>

@@ -327,7 +327,7 @@ class AuditRegressionTest extends TestCase
 
         $this->assertSame([
             'id', 'name', 'email', 'webhook_url', 'is_active', 'settings',
-            'underpayment_tolerance', 'created_at', 'balances', 'webhook', 'api_key',
+            'underpayment_tolerance', 'invoice_ttl', 'created_at', 'balances', 'webhook', 'api_key',
         ], array_keys($data));
 
         $this->assertArrayNotHasKey('api_keys', $data);

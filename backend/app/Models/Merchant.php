@@ -53,6 +53,24 @@ class Merchant extends Model
         return $this->hasMany(Transaction::class);
     }
 
+    public const DEFAULT_INVOICE_TTL = 3600;
+
+    public const MIN_INVOICE_TTL = 60;
+
+    public const MAX_INVOICE_TTL = 86400;
+
+    /**
+     * How long a new invoice stays payable when the API call does not pass
+     * `expires_in`, in seconds. Set per service in the admin (Settings →
+     * "Payment window"); default one hour.
+     */
+    public function invoiceTtl(): int
+    {
+        $value = (int) data_get($this->settings, 'invoice_ttl', self::DEFAULT_INVOICE_TTL);
+
+        return max(self::MIN_INVOICE_TTL, min(self::MAX_INVOICE_TTL, $value ?: self::DEFAULT_INVOICE_TTL));
+    }
+
     /** Underpayment tolerance in percent (SPEC §5), default 0.5%. */
     public function underpaymentTolerance(): string
     {

@@ -39,7 +39,7 @@ class InvoiceService
         $currency = $data['currency'] ?? null;
 
         $depositAddress = null;
-        $expiresIn = (int) ($data['expires_in'] ?? 3600);
+        $expiresIn = (int) ($data['expires_in'] ?? $merchant->invoiceTtl());
 
         if ($networkCode !== null && $currency !== null) {
             $this->assertPairAvailable($networkCode, $currency);
