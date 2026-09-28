@@ -231,11 +231,16 @@ services:
       - "443:443"
     volumes:
       - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Соседние проекты на этом сервере (например лото): по файлу <сайт>.caddy на каждый.
+      - ./docker/caddy/sites:/etc/caddy/sites:ro
       - caddy-data:/data
       - caddy-config:/config
     networks:
       default:
         ipv4_address: 10.77.0.10
+      # Общая сеть с соседними проектами: их nginx доступен caddy по имени контейнера.
+      # Отдельная от default, чтобы чужие контейнеры не занимали адреса в 10.77.0.0/24.
+      edge: {}
     depends_on:
       nginx: { condition: service_started }
     security_opt: ["no-new-privileges:true"]
@@ -257,3 +262,6 @@ networks:
     ipam:
       config:
         - subnet: 10.77.0.0/24
+  edge:
+    name: edge
+    external: true   # создаёт make up / make pull-up

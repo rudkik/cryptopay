@@ -11,3 +11,6 @@
 	# Caddy сам выставляет X-Forwarded-For / X-Forwarded-Proto.
 	reverse_proxy nginx:80
 }
+
+# Сайты соседних проектов (docker/caddy/sites/*.caddy, в git не хранятся). Нет файлов — не ошибка.
+import /etc/caddy/sites/*.caddy

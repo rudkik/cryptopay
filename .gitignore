@@ -27,3 +27,4 @@ sdk/php/.phpunit.cache/
 sdk/php/composer.lock
 sdk/js/node_modules/
 sdk/js/dist/
+docker/caddy/sites/*.caddy

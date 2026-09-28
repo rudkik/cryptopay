@@ -42,6 +42,7 @@ pull-up: ## запуск из готовых образов GHCR без сбор
 		echo "pull-up: в .env не задан IMAGE_PREFIX (например IMAGE_PREFIX=ghcr.io/rudkik/cryptopay)."; \
 		echo "         Образы публикует GitHub Actions после push в main (см. DEPLOY.md 4a). Для сборки на месте: make up"; \
 		exit 1; }
+	@docker network inspect edge >/dev/null 2>&1 || docker network create edge
 	docker compose pull
 	docker compose up -d --no-build
 
@@ -52,6 +53,7 @@ up: ## build & start everything
 		sed -i.bak "s|^APP_KEY=.*|APP_KEY=$$KEY|" .env && rm -f .env.bak; \
 		echo "APP_KEY сгенерирован и записан в .env"; }
 	@./scripts/check-env.sh .env
+	@docker network inspect edge >/dev/null 2>&1 || docker network create edge
 	docker compose up -d --build
 
 down:
